@@ -1,8 +1,7 @@
 import os
-import glob
 from PIL import Image
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 import torchvision.transforms as T
 
 
@@ -110,11 +109,7 @@ class Nutrition5kDataset(Dataset):
 
 def collate_nutrition5k(batch):
     """
-    Кастомний collate:
-    - overhead: звичайний батч (B, C, H, W)
-    - side_views: конкатенація всіх ракурсів батчу (Total_V, C, H, W)
-    - side_dish_indices: вектор довжини Total_V з ID страви в батчі (0 .. B-1)
-    - targets: (B, 5)
+    Custom collate for DataLoader, because different number of side_views per dish.
     """
     batch_size = len(batch)
     dish_ids = [item["dish_id"] for item in batch]
@@ -126,9 +121,9 @@ def collate_nutrition5k(batch):
     dish_indices = []
 
     for b_idx, item in enumerate(batch):
-        v = item["side_views"]  # (V_i, C, H, W)
+        v = item["side_views"]
         side_views_list.append(v)
-        # Записуємо індекс елемента батчу для кожного ракурсу цієї страви
+
         dish_indices.extend([b_idx] * v.size(0))
 
     side_views = torch.cat(side_views_list, dim=0)

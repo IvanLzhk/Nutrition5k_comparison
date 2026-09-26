@@ -2,8 +2,9 @@ import torch
 from torch.utils.data import DataLoader
 import torchvision.transforms as T
 from PIL import Image, ImageDraw
+from setup import METADATA_PATH, IMAGERY_ROOT
 
-from src.dataset.Nutrition5kDataset import Nutrition5kDataset, collate_nutrition5k
+from dataset.Nutrition5kDataset import Nutrition5kDataset, collate_nutrition5k
 
 
 def visualize_batch(batch, max_side_views=6):
@@ -47,9 +48,6 @@ def visualize_batch(batch, max_side_views=6):
 
 
 def verify_pipeline():
-    METADATA_PATH = "src\\dataset\\nutrition5k_dataset\\metadata\\dish_metadata_cafe1.csv"
-    IMAGERY_ROOT = "src\\dataset\\nutrition5k_dataset\\imagery"
-
     transforms = T.Compose([
         T.Resize((224, 224)),
         T.ToTensor(),
@@ -107,12 +105,10 @@ def verify_pipeline():
     assert side_views.shape[0] == indices.shape[0], "side_views shape error!"
     assert indices.max().item() < B and indices.min().item() >= 0, "side_dish_indices out of bounds!"
 
-    # 3. Check NaN / Inf
     assert not torch.isnan(overhead).any(), "Overhead NaN!"
     assert not torch.isnan(side_views).any(), "Side views NaN!"
     assert not torch.isnan(targets).any(), "Targets NaN!"
 
-    # 4. Приклад тарґетів
     print("\n[cal, mass(g), fat(g), carb(g), protein(g)]:")
     for i in range(B):
         vals = [f"{v:.1f}" for v in targets[i].tolist()]
