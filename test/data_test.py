@@ -2,7 +2,7 @@ import torch
 from torch.utils.data import DataLoader
 import torchvision.transforms as T
 from PIL import Image, ImageDraw
-from setup import METADATA_PATH, IMAGERY_ROOT
+from setup import METADATA_PATH, IMAGERY_ROOT, BATCH_SIZE, NUM_WORKERS
 
 from dataset.Nutrition5kDataset import Nutrition5kDataset, collate_nutrition5k
 
@@ -68,9 +68,9 @@ def verify_pipeline():
 
     loader = DataLoader(
         dataset,
-        batch_size=4,
+        batch_size=BATCH_SIZE,
         shuffle=True,
-        num_workers=2,
+        num_workers=NUM_WORKERS,
         collate_fn=collate_nutrition5k
     )
 
