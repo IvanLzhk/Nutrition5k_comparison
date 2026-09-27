@@ -46,7 +46,7 @@ class BaseModel(nn.Module, ABC):
         model_config: Optional[Mapping[str, Any]] = None,
         metadata: Optional[Mapping[str, Any]] = None,
     ) -> None:
-        """Save weights and JSON-safe progress data without serializing the model object."""
+        """Save tensor state to ``.pt`` and readable progress to a sibling ``.json``."""
         if isinstance(epoch, bool) or not isinstance(epoch, int) or epoch < 0:
             raise ValueError("epoch must be a non-negative integer.")
 
@@ -62,10 +62,14 @@ class BaseModel(nn.Module, ABC):
         payload = {
             "format_version": 1,
             "model_class": self._checkpoint_class_name(self),
-            "model_config": checkpoint_config,
             "model_state_dict": self.state_dict(),
             "optimizer_class": self._checkpoint_class_name(optimizer) if optimizer else None,
             "optimizer_state_dict": optimizer.state_dict() if optimizer else None,
+        }
+        metadata_payload = {
+            "format_version": 1,
+            "model_class": self._checkpoint_class_name(self),
+            "model_config": checkpoint_config,
             "epoch": epoch,
             "history": checkpoint_history,
             "best_val_loss": best_val_loss,
@@ -75,18 +79,37 @@ class BaseModel(nn.Module, ABC):
 
         checkpoint_path = Path(path)
         checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.NamedTemporaryFile(
-            dir=checkpoint_path.parent,
-            prefix=f"{checkpoint_path.name}.",
-            suffix=".tmp",
-            delete=False,
-        ) as temporary_file:
-            temporary_path = Path(temporary_file.name)
+        metadata_path = checkpoint_path.with_suffix(".json")
+        temporary_paths = []
         try:
-            torch.save(payload, temporary_path)
-            temporary_path.replace(checkpoint_path)
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=checkpoint_path.parent,
+                prefix=f"{metadata_path.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as temporary_file:
+                metadata_temp_path = Path(temporary_file.name)
+                temporary_paths.append(metadata_temp_path)
+                json.dump(metadata_payload, temporary_file, indent=2, sort_keys=True)
+                temporary_file.write("\n")
+
+            with tempfile.NamedTemporaryFile(
+                dir=checkpoint_path.parent,
+                prefix=f"{checkpoint_path.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as temporary_file:
+                checkpoint_temp_path = Path(temporary_file.name)
+                temporary_paths.append(checkpoint_temp_path)
+            torch.save(payload, checkpoint_temp_path)
+
+            checkpoint_temp_path.replace(checkpoint_path)
+            metadata_temp_path.replace(metadata_path)
         finally:
-            temporary_path.unlink(missing_ok=True)
+            for temporary_path in temporary_paths:
+                temporary_path.unlink(missing_ok=True)
 
     def load_checkpoint(
         self,
@@ -96,16 +119,24 @@ class BaseModel(nn.Module, ABC):
         map_location: Union[str, torch.device] = "cpu",
         expected_model_config: Optional[Mapping[str, Any]] = None,
     ) -> dict[str, Any]:
-        """Restore this model and optional optimizer, returning saved progress metadata."""
+        """Restore model state and progress from a checkpoint pair."""
+        checkpoint_path = Path(path)
+        metadata_path = checkpoint_path.with_suffix(".json")
+        with metadata_path.open("r", encoding="utf-8") as metadata_file:
+            progress = json.load(metadata_file)
+        if not isinstance(progress, Mapping) or progress.get("format_version") != 1:
+            raise ValueError("Unsupported or invalid checkpoint metadata.")
+
         checkpoint = torch.load(path, map_location=map_location, weights_only=True)
         if not isinstance(checkpoint, Mapping) or checkpoint.get("format_version") != 1:
             raise ValueError("Unsupported or invalid model checkpoint.")
-        if checkpoint.get("model_class") != self._checkpoint_class_name(self):
+
+        if progress.get("model_class") != self._checkpoint_class_name(self):
             raise ValueError(
                 "Checkpoint model class does not match the provided model instance."
             )
 
-        saved_config = checkpoint.get("model_config")
+        saved_config = progress.get("model_config")
         if expected_model_config is not None:
             self._validate_json_data("expected_model_config", dict(expected_model_config))
             if saved_config != dict(expected_model_config):
@@ -122,10 +153,10 @@ class BaseModel(nn.Module, ABC):
             optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
 
         return {
-            "epoch": checkpoint.get("epoch", 0),
-            "history": checkpoint.get("history", {}),
-            "best_val_loss": checkpoint.get("best_val_loss"),
-            "best_epoch": checkpoint.get("best_epoch"),
+            "epoch": progress.get("epoch", 0),
+            "history": progress.get("history", {}),
+            "best_val_loss": progress.get("best_val_loss"),
+            "best_epoch": progress.get("best_epoch"),
             "model_config": saved_config,
-            "metadata": checkpoint.get("metadata"),
+            "metadata": progress.get("metadata"),
         }

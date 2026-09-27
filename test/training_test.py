@@ -1,4 +1,5 @@
 import io
+import json
 import unittest
 import tempfile
 from pathlib import Path
@@ -9,7 +10,7 @@ from torch import nn
 from torch.utils.data import DataLoader, Dataset
 
 from src.models import BaseModel
-from src.training import get_kfold_splits, train_model
+from src.training import get_kfold_splits, test_model, train_model
 
 
 class RegressionDataset(Dataset):
@@ -36,6 +37,68 @@ class LinearRegressionModel(BaseModel):
 
 
 class TrainModelTests(unittest.TestCase):
+    def test_test_model_reports_loss_without_updating_weights(self):
+        loader = DataLoader(RegressionDataset(), batch_size=4)
+        model = LinearRegressionModel()
+        expected_parameters = [parameter.detach().clone() for parameter in model.parameters()]
+        with torch.no_grad():
+            batch_losses = []
+            for batch in loader:
+                model_inputs = {key: value for key, value in batch.items() if key != "targets"}
+                batch_losses.append(
+                    nn.MSELoss(reduction="none")(
+                        model(model_inputs), batch["targets"]
+                    )
+                )
+            expected_loss = torch.cat(batch_losses).mean().item()
+
+        metrics = test_model(model, loader, nn.MSELoss(), device="cpu")
+
+        self.assertAlmostEqual(metrics["loss"], expected_loss, places=4)
+        self.assertFalse(model.training)
+        self.assertTrue(
+            all(
+                torch.equal(expected, current)
+                for expected, current in zip(expected_parameters, model.parameters())
+            )
+        )
+
+    def test_test_model_reports_streaming_regression_metrics(self):
+        class ZeroModel(BaseModel):
+            def forward(self, batch):
+                return torch.zeros_like(batch["features"])
+
+        samples = [
+            {"features": torch.tensor([0.0, 2.0]), "targets": torch.tensor([0.0, 2.0])},
+            {"features": torch.tensor([0.0, 4.0]), "targets": torch.tensor([2.0, 4.0])},
+        ]
+        loader = DataLoader(samples, batch_size=1)
+
+        metrics = test_model(
+            ZeroModel(),
+            loader,
+            nn.MSELoss(),
+            device="cpu",
+            progress_label=None,
+            target_names=["first", "second"],
+            accuracy_tolerance_percent=10.0,
+        )
+
+        self.assertEqual(metrics["sample_count"], 2)
+        self.assertEqual(metrics["mae"], {"first": 1.0, "second": 3.0})
+        self.assertEqual(
+            metrics["mape_percent"], {"first": 100.0, "second": 100.0}
+        )
+        self.assertAlmostEqual(metrics["r2"]["first"], -1.0)
+        self.assertAlmostEqual(metrics["r2"]["second"], -9.0)
+        self.assertEqual(
+            metrics["acc_at_k_percent"],
+            {"k": 10.0, "values_percent": {"first": 0.0, "second": 0.0}},
+        )
+        self.assertEqual(
+            metrics["percentage_metric_sample_count"], {"first": 1, "second": 2}
+        )
+
     def test_base_model_checkpoint_restores_weights_optimizer_and_progress(self):
         model = LinearRegressionModel()
         optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
@@ -55,6 +118,10 @@ class TrainModelTests(unittest.TestCase):
                 best_epoch=4,
                 model_config={"input_features": 1},
             )
+            metadata_path = checkpoint_path.with_suffix(".json")
+            with metadata_path.open("r", encoding="utf-8") as metadata_file:
+                saved_metadata = json.load(metadata_file)
+            saved_tensors = torch.load(checkpoint_path, weights_only=True)
 
             restored_model = LinearRegressionModel()
             restored_optimizer = torch.optim.SGD(
@@ -72,6 +139,27 @@ class TrainModelTests(unittest.TestCase):
         self.assertEqual(progress["epoch"], 4)
         self.assertEqual(progress["history"], {"train_loss": [0.5], "val_loss": [0.25]})
         self.assertEqual(progress["best_epoch"], 4)
+        self.assertEqual(saved_metadata["model_config"], {"input_features": 1})
+        self.assertEqual(saved_metadata["history"], {"train_loss": [0.5], "val_loss": [0.25]})
+        self.assertNotIn("model_state_dict", saved_metadata)
+        self.assertNotIn("history", saved_tensors)
+
+    def test_checkpoint_loading_requires_json_sidecar(self):
+        model = LinearRegressionModel()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            checkpoint_path = Path(temp_dir) / "checkpoint.pt"
+            model.save_checkpoint(
+                checkpoint_path,
+                epoch=3,
+                history={"train_loss": [0.75]},
+                model_config={"input_features": 1},
+            )
+            checkpoint_path.with_suffix(".json").unlink()
+
+            restored_model = LinearRegressionModel()
+            with self.assertRaises(FileNotFoundError):
+                restored_model.load_checkpoint(checkpoint_path)
 
     def test_trains_model_and_reports_validation_loss(self):
         loader = DataLoader(RegressionDataset(), batch_size=4)
@@ -118,6 +206,7 @@ class TrainModelTests(unittest.TestCase):
         self.assertIn("epoch 1/1 train", output.getvalue())
         self.assertIn("epoch 1/1 val", output.getvalue())
         self.assertIn("2/2 100%", output.getvalue())
+        self.assertIn("elapsed=00:00:", output.getvalue())
 
     @unittest.skipUnless(torch.cuda.is_available(), "CUDA is not available")
     def test_trains_model_on_cuda(self):

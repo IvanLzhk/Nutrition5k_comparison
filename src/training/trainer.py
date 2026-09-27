@@ -1,6 +1,8 @@
 from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 import sys
+import time
+import math
 from typing import Any, Optional, Union
 
 import torch
@@ -11,7 +13,7 @@ from src.models import BaseModel
 
 
 def _move_to_device(value: Any, device: torch.device) -> Any:
-    if isinstance(value, Tensor):  
+    if isinstance(value, Tensor):
         return value.to(device)
     if isinstance(value, Mapping):
         return {key: _move_to_device(item, device) for key, item in value.items()}
@@ -22,11 +24,19 @@ def _move_to_device(value: Any, device: torch.device) -> Any:
     return value
 
 
+def _format_elapsed(seconds: float) -> str:
+    total_seconds = max(0, int(seconds))
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+
 def _write_progress(
     label: str,
     batch_index: int,
     total_batches: Optional[int],
     running_loss: float,
+    elapsed_seconds: float,
 ) -> None:
     if total_batches:
         fraction = min(batch_index / total_batches, 1.0)
@@ -35,14 +45,58 @@ def _write_progress(
         progress = f"[{bar}] {batch_index}/{total_batches} {fraction:.0%}"
     else:
         progress = f"batch {batch_index}"
-    sys.stdout.write(f"\r{label} {progress} loss={running_loss:.4f}")
+    elapsed = _format_elapsed(elapsed_seconds)
+    sys.stdout.write(f"\r{label} {progress} loss={running_loss:.4f} elapsed={elapsed}")
     sys.stdout.flush()
+
+
+def _predict_batch(
+    model: BaseModel,
+    raw_batch: Mapping[str, Any],
+    device: torch.device,
+    target_key: str,
+) -> tuple[Tensor, Tensor]:
+    if target_key not in raw_batch:
+        raise KeyError(f"Batch is missing target field {target_key!r}.")
+
+    batch = _move_to_device(raw_batch, device)
+    targets = batch[target_key]
+    if not isinstance(targets, Tensor):
+        raise TypeError(f"Batch field {target_key!r} must be a tensor.")
+    if targets.ndim == 0:
+        raise ValueError("The target tensor must include a batch dimension.")
+
+    model_inputs = {key: value for key, value in batch.items() if key != target_key}
+    predictions = model(model_inputs)
+    if not isinstance(predictions, Tensor):
+        raise TypeError("The model must return a tensor of predictions.")
+    if predictions.shape != targets.shape:
+        raise ValueError(
+            "Model predictions and targets must have matching shapes; "
+            f"got {tuple(predictions.shape)} and {tuple(targets.shape)}."
+        )
+
+    return predictions, targets
+
+
+def _compute_batch_loss(
+    model: BaseModel,
+    raw_batch: Mapping[str, Any],
+    criterion: Callable[[Tensor, Tensor], Tensor],
+    device: torch.device,
+    target_key: str,
+) -> tuple[Tensor, int]:
+    predictions, targets = _predict_batch(model, raw_batch, device, target_key)
+    loss = criterion(predictions, targets)
+    if not isinstance(loss, Tensor) or loss.numel() != 1:
+        raise ValueError("The criterion must return a scalar tensor.")
+    return loss, targets.shape[0]
 
 
 def _run_epoch(
     model: BaseModel,
     data_loader: Iterable[Mapping[str, Any]],
-    criterion: Callable[[Tensor, Tensor], Tensor], # loss func
+    criterion: Callable[[Tensor, Tensor], Tensor],
     device: torch.device,
     target_key: str,
     optimizer: Optional[Optimizer] = None,
@@ -50,6 +104,7 @@ def _run_epoch(
 ) -> float:
     training = optimizer is not None
     model.train(training)
+    phase_started_at = time.perf_counter()
     total_loss = 0.0
     sample_count = 0
     batch_count = 0
@@ -63,36 +118,15 @@ def _run_epoch(
             batch_count += 1
             if not isinstance(raw_batch, Mapping):
                 raise TypeError("Each data-loader batch must be a mapping.")
-            if target_key not in raw_batch:
-                raise KeyError(f"Batch is missing target field {target_key!r}.")
-
-            batch = _move_to_device(raw_batch, device)
-            targets = batch[target_key]
-            if not isinstance(targets, Tensor):
-                raise TypeError(f"Batch field {target_key!r} must be a tensor.")
-            if targets.ndim == 0:
-                raise ValueError("The target tensor must include a batch dimension.")
-
-            model_inputs = {key: value for key, value in batch.items() if key != target_key}
-            predictions = model(model_inputs)
-            if not isinstance(predictions, Tensor):
-                raise TypeError("The model must return a tensor of predictions.")
-            if predictions.shape != targets.shape:
-                raise ValueError(
-                    "Model predictions and targets must have matching shapes; "
-                    f"got {tuple(predictions.shape)} and {tuple(targets.shape)}."
-                )
-
-            loss = criterion(predictions, targets)
-            if not isinstance(loss, Tensor) or loss.numel() != 1:
-                raise ValueError("The criterion must return a scalar tensor.")
+            loss, batch_size = _compute_batch_loss(
+                model, raw_batch, criterion, device, target_key
+            )
 
             if training:
                 optimizer.zero_grad(set_to_none=True)
                 loss.backward()
                 optimizer.step()
 
-            batch_size = targets.shape[0]
             total_loss += loss.detach().item() * batch_size
             sample_count += batch_size
             if progress_label:
@@ -101,6 +135,7 @@ def _run_epoch(
                     batch_count,
                     total_batches,
                     total_loss / sample_count,
+                    time.perf_counter() - phase_started_at,
                 )
 
     if sample_count == 0:
@@ -115,7 +150,7 @@ def train_model(
     model: BaseModel,
     train_loader: Iterable[Mapping[str, Any]],
     optimizer: Optimizer,
-    criterion: Callable[[Tensor, Tensor], Tensor], # loss function
+    criterion: Callable[[Tensor, Tensor], Tensor],
     epochs: int,
     validation_loader: Optional[Iterable[Mapping[str, Any]]] = None,
     device: Optional[Union[str, torch.device]] = None,
@@ -147,6 +182,7 @@ def train_model(
         raise ValueError("Latest and best checkpoints must use different paths.")
 
     selected_device = torch.device(device if device is not None else "cuda")
+    training_started_at = time.perf_counter()
     model.to(selected_device)
 
     start_epoch = 0
@@ -223,6 +259,169 @@ def train_model(
         if validation_loader is not None:
             stats += f", val_loss={history['val_loss'][-1]:.4f}"
         label = f"{progress_label}, " if progress_label else ""
-        print(f"{label}epoch {epoch}/{start_epoch + epochs}: {stats}", flush=True)
+        elapsed = _format_elapsed(time.perf_counter() - training_started_at)
+        print(
+            f"{label}epoch {epoch}/{start_epoch + epochs}: {stats}, "
+            f"elapsed={elapsed}",
+            flush=True,
+        )
 
     return history
+
+def test_model(
+    model: BaseModel,
+    test_loader: Iterable[Mapping[str, Any]],
+    criterion: Callable[[Tensor, Tensor], Tensor],
+    device: Optional[Union[str, torch.device]] = None,
+    target_key: str = "targets",
+    progress_label: Optional[str] = "Test",
+    target_names: Optional[list[str]] = None,
+    accuracy_tolerance_percent: float = 10.0,
+) -> dict[str, Any]:
+    """Evaluate regression metrics with bounded memory, one batch at a time.
+
+    MAPE and Acc@K% exclude zero-valued targets because relative error is
+    undefined for zero. R2 is reported per output; constant targets yield None.
+    """
+    if not target_key:
+        raise ValueError("target_key must not be empty.")
+    if not math.isfinite(accuracy_tolerance_percent) or accuracy_tolerance_percent <= 0:
+        raise ValueError("accuracy_tolerance_percent must be a positive finite number.")
+    if target_names is not None and len(set(target_names)) != len(target_names):
+        raise ValueError("target_names must be unique.")
+
+    default_device = "cuda" if torch.cuda.is_available() else "cpu"
+    selected_device = torch.device(device if device is not None else default_device)
+    model.to(selected_device)
+    model.eval()
+
+    sample_count = 0
+    batch_count = 0
+    total_loss = 0.0
+    totals = None
+    percentage_counts = None
+    accuracy_counts = None
+    try:
+        total_batches = len(test_loader)
+    except (TypeError, NotImplementedError):
+        total_batches = None
+    evaluation_started_at = time.perf_counter()
+
+    with torch.no_grad():
+        for raw_batch in test_loader:
+            batch_count += 1
+            if not isinstance(raw_batch, Mapping):
+                raise TypeError("Each data-loader batch must be a mapping.")
+            predictions, targets = _predict_batch(
+                model, raw_batch, selected_device, target_key
+            )
+            loss = criterion(predictions, targets)
+            if not isinstance(loss, Tensor) or loss.numel() != 1:
+                raise ValueError("The criterion must return a scalar tensor.")
+
+            predictions_cpu = predictions.detach().to(device="cpu", dtype=torch.float64)
+            targets_cpu = targets.detach().to(device="cpu", dtype=torch.float64)
+            if predictions_cpu.ndim == 1:
+                predictions_cpu = predictions_cpu.unsqueeze(1)
+                targets_cpu = targets_cpu.unsqueeze(1)
+            if not torch.isfinite(predictions_cpu).all() or not torch.isfinite(targets_cpu).all():
+                raise ValueError("Predictions and targets must contain only finite values.")
+
+            if totals is None:
+                output_count = predictions_cpu.shape[1]
+                if target_names is not None and len(target_names) != output_count:
+                    raise ValueError(
+                        f"Expected {output_count} target names, got {len(target_names)}."
+                    )
+                totals = {
+                    "absolute_error": torch.zeros(output_count, dtype=torch.float64),
+                    "squared_error": torch.zeros(output_count, dtype=torch.float64),
+                    "percentage_error": torch.zeros(output_count, dtype=torch.float64),
+                    "target_sum": torch.zeros(output_count, dtype=torch.float64),
+                    "target_squared_sum": torch.zeros(output_count, dtype=torch.float64),
+                }
+                percentage_counts = torch.zeros(output_count, dtype=torch.int64)
+                accuracy_counts = torch.zeros(output_count, dtype=torch.int64)
+
+            errors = predictions_cpu - targets_cpu
+            absolute_errors = errors.abs()
+            nonzero_targets = targets_cpu != 0
+            relative_errors = torch.zeros_like(absolute_errors)
+            relative_errors[nonzero_targets] = (
+                absolute_errors[nonzero_targets] / targets_cpu.abs()[nonzero_targets]
+            )
+
+            totals["absolute_error"] += absolute_errors.sum(dim=0)
+            totals["squared_error"] += errors.square().sum(dim=0)
+            totals["percentage_error"] += relative_errors.sum(dim=0)
+            totals["target_sum"] += targets_cpu.sum(dim=0)
+            totals["target_squared_sum"] += targets_cpu.square().sum(dim=0)
+            percentage_counts += nonzero_targets.sum(dim=0)
+            accuracy_counts += (
+                (relative_errors <= accuracy_tolerance_percent / 100)
+                & nonzero_targets
+            ).sum(dim=0)
+
+            batch_size = targets_cpu.shape[0]
+            sample_count += batch_size
+            total_loss += loss.detach().item() * batch_size
+            if progress_label:
+                _write_progress(
+                    progress_label,
+                    batch_count,
+                    total_batches,
+                    total_loss / sample_count,
+                    time.perf_counter() - evaluation_started_at,
+                )
+
+    if sample_count == 0 or totals is None:
+        raise ValueError("The data loader produced no samples.")
+    if progress_label:
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+
+    names = target_names or [f"target_{index}" for index in range(len(totals["absolute_error"]))]
+    r2_values = {}
+    for index, name in enumerate(names):
+        total_sum_squares = (
+            totals["target_squared_sum"][index]
+            - totals["target_sum"][index].square() / sample_count
+        ).item()
+        total_sum_squares = max(0.0, total_sum_squares)
+        r2_values[name] = (
+            1.0 - totals["squared_error"][index].item() / total_sum_squares
+            if total_sum_squares > 0
+            else None
+        )
+
+    mape_values = {}
+    accuracy_values = {}
+    valid_percentage_counts = {}
+    for index, name in enumerate(names):
+        valid_count = int(percentage_counts[index].item())
+        valid_percentage_counts[name] = valid_count
+        if valid_count:
+            mape_values[name] = (
+                100.0 * totals["percentage_error"][index].item() / valid_count
+            )
+            accuracy_values[name] = 100.0 * accuracy_counts[index].item() / valid_count
+        else:
+            mape_values[name] = None
+            accuracy_values[name] = None
+
+    return {
+        "loss": total_loss / sample_count,
+        "sample_count": sample_count,
+        "mae": {
+            name: totals["absolute_error"][index].item() / sample_count
+            for index, name in enumerate(names)
+        },
+        "mape_percent": mape_values,
+        "r2": r2_values,
+        "acc_at_k_percent": {
+            "k": accuracy_tolerance_percent,
+            "values_percent": accuracy_values,
+        },
+        "percentage_metric_sample_count": valid_percentage_counts,
+    }
+    
