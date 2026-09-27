@@ -9,7 +9,7 @@ from src.models import BaseModel
 
 
 def _move_to_device(value: Any, device: torch.device) -> Any:
-    if isinstance(value, Tensor):
+    if isinstance(value, Tensor):  
         return value.to(device)
     if isinstance(value, Mapping):
         return {key: _move_to_device(item, device) for key, item in value.items()}
@@ -23,7 +23,7 @@ def _move_to_device(value: Any, device: torch.device) -> Any:
 def _run_epoch(
     model: BaseModel,
     data_loader: Iterable[Mapping[str, Any]],
-    criterion: Callable[[Tensor, Tensor], Tensor],
+    criterion: Callable[[Tensor, Tensor], Tensor], # loss func
     device: torch.device,
     target_key: str,
     optimizer: Optional[Optimizer] = None,
@@ -79,7 +79,7 @@ def train_model(
     model: BaseModel,
     train_loader: Iterable[Mapping[str, Any]],
     optimizer: Optimizer,
-    criterion: Callable[[Tensor, Tensor], Tensor],
+    criterion: Callable[[Tensor, Tensor], Tensor], # loss function
     epochs: int,
     validation_loader: Optional[Iterable[Mapping[str, Any]]] = None,
     device: Optional[Union[str, torch.device]] = None,

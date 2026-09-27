@@ -1,11 +1,13 @@
 import unittest
+import tempfile
+from pathlib import Path
 
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 
 from src.models import BaseModel
-from src.training import train_model
+from src.training import get_kfold_splits, train_model
 
 
 class RegressionDataset(Dataset):
@@ -58,6 +60,30 @@ class TrainModelTests(unittest.TestCase):
                 for initial, current in zip(initial_parameters, model.parameters())
             )
         )
+
+    def test_kfold_splits_partition_training_ids_once(self):
+        dish_ids = [f"dish-{index}" for index in range(11)]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            train_ids_path = Path(temp_dir) / "train_ids.txt"
+            train_ids_path.write_text("\n".join(dish_ids), encoding="utf-8")
+
+            split_iterator = get_kfold_splits(
+                n_splits=5,
+                shuffle=True,
+                random_state=21,
+                train_ids_path=train_ids_path,
+            )
+            splits = list(split_iterator)
+
+        self.assertEqual(len(splits), 5) # expected folds
+        self.assertEqual([len(val_ids) for _, val_ids in splits], [3, 2, 2, 2, 2]) # expected split
+        self.assertCountEqual(
+            (dish_id for _, val_ids in splits for dish_id in val_ids),
+            dish_ids,
+        )# all ids present in val sets
+        for train_ids, val_ids in splits:
+            self.assertFalse(set(train_ids) & set(val_ids)) # no id in both train and val
+            self.assertEqual(set(train_ids) | set(val_ids), set(dish_ids)) # all ids present
 
     def test_rejects_mismatched_prediction_shape(self):
         class WrongShapeModel(BaseModel):
