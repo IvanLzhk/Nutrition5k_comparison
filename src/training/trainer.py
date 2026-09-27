@@ -1,4 +1,5 @@
 from collections.abc import Callable, Iterable, Mapping
+from pathlib import Path
 from typing import Any, Optional, Union
 
 import torch
@@ -83,7 +84,11 @@ def train_model(
     epochs: int,
     validation_loader: Optional[Iterable[Mapping[str, Any]]] = None,
     device: Optional[Union[str, torch.device]] = None,
-    target_key: str = "targets",
+    target_key: str = "targets", # key in loader to get truth
+    last_checkpoint_path: Optional[Union[str, Path]] = None,
+    best_checkpoint_path: Optional[Union[str, Path]] = None,
+    resume_from: Optional[Union[str, Path]] = None,
+    model_config: Optional[Mapping[str, Any]] = None,
 ) -> dict[str, list[float]]:
     """Train a ``BaseModel`` and return sample-weighted losses for each epoch.
 
@@ -95,17 +100,42 @@ def train_model(
         raise ValueError("epochs must be a positive integer.")
     if not target_key:
         raise ValueError("target_key must not be empty.")
+    if best_checkpoint_path is not None and validation_loader is None:
+        raise ValueError("best_checkpoint_path requires a validation_loader.")
+    if (
+        last_checkpoint_path is not None
+        and best_checkpoint_path is not None
+        and Path(last_checkpoint_path) == Path(best_checkpoint_path)
+    ):
+        raise ValueError("Latest and best checkpoints must use different paths.")
 
     selected_device = torch.device(
         device if device is not None else ("cuda" if torch.cuda.is_available() else "cpu")
     )
     model.to(selected_device)
 
+    start_epoch = 0
+    best_val_loss = None
+    best_epoch = None
     history = {"train_loss": []}
-    if validation_loader is not None:
-        history["val_loss"] = []
+    if resume_from is not None:
+        progress = model.load_checkpoint(
+            resume_from,
+            optimizer=optimizer,
+            map_location=selected_device,
+            expected_model_config=model_config,
+        )
+        start_epoch = progress["epoch"]
+        history = progress["history"]
+        best_val_loss = progress["best_val_loss"]
+        best_epoch = progress["best_epoch"]
+        if not isinstance(history, dict) or not isinstance(history.get("train_loss"), list):
+            raise ValueError("Checkpoint history must include a train_loss list.")
 
-    for _ in range(epochs):
+    if validation_loader is not None:
+        history.setdefault("val_loss", [])
+
+    for epoch in range(start_epoch + 1, start_epoch + epochs + 1):
         history["train_loss"].append(
             _run_epoch(
                 model,
@@ -117,14 +147,37 @@ def train_model(
             )
         )
         if validation_loader is not None:
-            history["val_loss"].append(
-                _run_epoch(
-                    model,
-                    validation_loader,
-                    criterion,
-                    selected_device,
-                    target_key,
-                )
+            val_loss = _run_epoch(
+                model,
+                validation_loader,
+                criterion,
+                selected_device,
+                target_key,
+            )
+            history["val_loss"].append(val_loss)
+            if best_val_loss is None or val_loss < best_val_loss:
+                best_val_loss = val_loss
+                best_epoch = epoch
+                if best_checkpoint_path is not None:
+                    model.save_checkpoint(
+                        best_checkpoint_path,
+                        optimizer=optimizer,
+                        epoch=epoch,
+                        history=history,
+                        best_val_loss=best_val_loss,
+                        best_epoch=best_epoch,
+                        model_config=model_config,
+                    )
+
+        if last_checkpoint_path is not None:
+            model.save_checkpoint(
+                last_checkpoint_path,
+                optimizer=optimizer,
+                epoch=epoch,
+                history=history,
+                best_val_loss=best_val_loss,
+                best_epoch=best_epoch,
+                model_config=model_config,
             )
 
     return history

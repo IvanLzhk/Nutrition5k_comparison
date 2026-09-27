@@ -1,3 +1,4 @@
 /data/nutrition5k_dataset/*
 
 __pycache__/
+.venv/

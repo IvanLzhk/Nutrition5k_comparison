@@ -8,10 +8,8 @@ import torch
 import torchvision.transforms as T
 from torch.utils.data import DataLoader
 
-from src.dataset.Nutrition5kDataset import (
-    Nutrition5kDataset,
-    collate_nutrition5k,
-)
+from src.dataset.Nutrition5kDataset import Nutrition5kDataset, collate_nutrition5k
+
 
 
 class Nutrition5kDatasetTests(unittest.TestCase):
