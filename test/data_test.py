@@ -51,6 +51,27 @@ class Nutrition5kDatasetTests(unittest.TestCase):
             transform=T.Compose([T.Resize((4, 4)), T.ToTensor()]),
         )
 
+    def test_image_level_dataset_returns_each_view_as_a_sample(self):
+        dataset = Nutrition5kDataset(
+            metadata_path=str(self.metadata_path),
+            imagery_root=str(self.imagery_root),
+            transform=T.Compose([T.Resize((4, 4)), T.ToTensor()]),
+            image_level=True,
+        )
+
+        self.assertEqual(len(dataset), 5)
+        self.assertEqual(
+            [dataset[index]["view_type"] for index in range(len(dataset))],
+            ["overhead", "side", "overhead", "side", "side"],
+        )
+        dish_weights = {}
+        for index, (entry, _, _) in enumerate(dataset.image_samples):
+            dish_weights[entry["dish_id"]] = (
+                dish_weights.get(entry["dish_id"], 0.0)
+                + dataset.sample_weights[index]
+            )
+        self.assertEqual(dish_weights, {"dish-1": 1.0, "dish-2": 1.0})
+
     def test_loads_entries_and_applies_image_transform(self):
         dataset = self._make_dataset()
 

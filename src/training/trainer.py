@@ -1,5 +1,6 @@
 from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
+import sys
 from typing import Any, Optional, Union
 
 import torch
@@ -21,6 +22,23 @@ def _move_to_device(value: Any, device: torch.device) -> Any:
     return value
 
 
+def _write_progress(
+    label: str,
+    batch_index: int,
+    total_batches: Optional[int],
+    running_loss: float,
+) -> None:
+    if total_batches:
+        fraction = min(batch_index / total_batches, 1.0)
+        filled = int(24 * fraction)
+        bar = "=" * filled + "." * (24 - filled)
+        progress = f"[{bar}] {batch_index}/{total_batches} {fraction:.0%}"
+    else:
+        progress = f"batch {batch_index}"
+    sys.stdout.write(f"\r{label} {progress} loss={running_loss:.4f}")
+    sys.stdout.flush()
+
+
 def _run_epoch(
     model: BaseModel,
     data_loader: Iterable[Mapping[str, Any]],
@@ -28,14 +46,21 @@ def _run_epoch(
     device: torch.device,
     target_key: str,
     optimizer: Optional[Optimizer] = None,
+    progress_label: Optional[str] = None,
 ) -> float:
     training = optimizer is not None
     model.train(training)
     total_loss = 0.0
     sample_count = 0
+    batch_count = 0
+    try:
+        total_batches = len(data_loader)
+    except (TypeError, NotImplementedError):
+        total_batches = None
 
     with torch.set_grad_enabled(training):
         for raw_batch in data_loader:
+            batch_count += 1
             if not isinstance(raw_batch, Mapping):
                 raise TypeError("Each data-loader batch must be a mapping.")
             if target_key not in raw_batch:
@@ -70,9 +95,19 @@ def _run_epoch(
             batch_size = targets.shape[0]
             total_loss += loss.detach().item() * batch_size
             sample_count += batch_size
+            if progress_label:
+                _write_progress(
+                    progress_label,
+                    batch_count,
+                    total_batches,
+                    total_loss / sample_count,
+                )
 
     if sample_count == 0:
         raise ValueError("The data loader produced no samples.")
+    if progress_label:
+        sys.stdout.write("\n")
+        sys.stdout.flush()
     return total_loss / sample_count
 
 
@@ -89,12 +124,14 @@ def train_model(
     best_checkpoint_path: Optional[Union[str, Path]] = None,
     resume_from: Optional[Union[str, Path]] = None,
     model_config: Optional[Mapping[str, Any]] = None,
+    progress_label: Optional[str] = None,
 ) -> dict[str, list[float]]:
-    """Train a ``BaseModel`` and return sample-weighted losses for each epoch.
+    """Train a ``BaseModel`` on CUDA by default and return sample-weighted losses.
 
     Batches must be mappings containing ``target_key`` and any model inputs.
     The model receives all batch fields except the target. The criterion should
-    return a scalar mean loss (for example, ``nn.MSELoss()``).
+    return a scalar mean loss (for example, ``nn.MSELoss()``). Pass ``device="cpu"``
+    to explicitly train on the CPU.
     """
     if epochs <= 0:
         raise ValueError("epochs must be a positive integer.")
@@ -109,9 +146,7 @@ def train_model(
     ):
         raise ValueError("Latest and best checkpoints must use different paths.")
 
-    selected_device = torch.device(
-        device if device is not None else ("cuda" if torch.cuda.is_available() else "cpu")
-    )
+    selected_device = torch.device(device if device is not None else "cuda")
     model.to(selected_device)
 
     start_epoch = 0
@@ -136,6 +171,8 @@ def train_model(
         history.setdefault("val_loss", [])
 
     for epoch in range(start_epoch + 1, start_epoch + epochs + 1):
+        epoch_label = f"{progress_label}, " if progress_label else ""
+        epoch_label += f"epoch {epoch}/{start_epoch + epochs}"
         history["train_loss"].append(
             _run_epoch(
                 model,
@@ -144,6 +181,7 @@ def train_model(
                 selected_device,
                 target_key,
                 optimizer,
+                progress_label=f"{epoch_label} train",
             )
         )
         if validation_loader is not None:
@@ -153,6 +191,7 @@ def train_model(
                 criterion,
                 selected_device,
                 target_key,
+                progress_label=f"{epoch_label} val",
             )
             history["val_loss"].append(val_loss)
             if best_val_loss is None or val_loss < best_val_loss:
@@ -179,5 +218,11 @@ def train_model(
                 best_epoch=best_epoch,
                 model_config=model_config,
             )
+
+        stats = f"train_loss={history['train_loss'][-1]:.4f}"
+        if validation_loader is not None:
+            stats += f", val_loss={history['val_loss'][-1]:.4f}"
+        label = f"{progress_label}, " if progress_label else ""
+        print(f"{label}epoch {epoch}/{start_epoch + epochs}: {stats}", flush=True)
 
     return history

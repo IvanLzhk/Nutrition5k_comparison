@@ -6,5 +6,5 @@ TEST_IDS_PATH="data\\nutrition5k_dataset\\dish_ids\\splits\\rgb_test_ids.txt"
 MODEL_CHECKPOINT_DIR="checkpoints"
 
 # hyperparameters:
-BATCH_SIZE=4
-NUM_WORKERS=2
+BATCH_SIZE=128
+NUM_WORKERS=8

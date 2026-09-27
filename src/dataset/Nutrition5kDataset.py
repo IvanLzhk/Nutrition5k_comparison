@@ -6,18 +6,20 @@ import torchvision.transforms as T
 
 
 class Nutrition5kDataset(Dataset):
-    def __init__(self, metadata_path: str, imagery_root: str, transform=None, dish_ids=None): # TODO: side angles перевернуті догори дригом, перевернути їх на якомусь етапі
+    def __init__(self, metadata_path: str, imagery_root: str, transform=None, dish_ids=None, image_level=False): # TODO: side angles перевернуті догори дригом, перевернути їх на якомусь етапі
         """
         Args:
             metadata_path: CSV metadata file path (dish_metadata_cafe1.csv).
             imagery_root: Path to the 'imagery' folder (containing 'overhead' and 'side_angles').
             transform: torchvision transforms for images.
             dish_ids: Optional list/set of dish_ids for train/val split.
+            image_level: Return each overhead or side image as its own labeled sample.
         """
         self.imagery_root = imagery_root
         self.overhead_dir = os.path.join(imagery_root, "realsense_overhead")
         self.side_angles_dir = os.path.join(imagery_root, "side_angles")
         self.transform = transform
+        self.image_level = image_level
 
         self.entries = []
         dish_filter = set(dish_ids) if dish_ids is not None else None
@@ -54,8 +56,27 @@ class Nutrition5kDataset(Dataset):
                         "side_path": dish_side
                     })
 
+        self.image_samples = []
+        sample_counts = {}
+        if self.image_level:
+            for entry in self.entries:
+                dish_samples = []
+                overhead_path = os.path.join(entry["overhead_path"], "rgb.png")
+                if os.path.isfile(overhead_path):
+                    dish_samples.append((entry, overhead_path, "overhead"))
+                dish_samples.extend(
+                    (entry, path, "side")
+                    for path in self._get_image_paths(entry["side_path"])
+                )
+                self.image_samples.extend(dish_samples)
+                sample_counts[entry["dish_id"]] = len(dish_samples)
+        self.sample_weights = [
+            1.0 / sample_counts[entry["dish_id"]]
+            for entry, _, _ in self.image_samples
+        ]
+
     def __len__(self):
-        return len(self.entries)
+        return len(self.image_samples) if self.image_level else len(self.entries)
 
     def _get_image_paths(self, dish_folder: str):
         valid_exts = (".jpeg", ".jpg", ".png")
@@ -80,6 +101,15 @@ class Nutrition5kDataset(Dataset):
         return T.ToTensor()(img)
 
     def __getitem__(self, idx):
+        if self.image_level:
+            entry, image_path, view_type = self.image_samples[idx]
+            return {
+                "dish_id": entry["dish_id"],
+                "view_type": view_type,
+                "overhead": self._load_image(image_path),
+                "targets": torch.tensor(entry["targets"], dtype=torch.float32),
+            }
+
         entry = self.entries[idx]
 
         # RGB overhead

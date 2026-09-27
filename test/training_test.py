@@ -1,3 +1,4 @@
+import io
 import unittest
 import tempfile
 from pathlib import Path
@@ -99,13 +100,66 @@ class TrainModelTests(unittest.TestCase):
             )
         )
 
+    def test_training_reports_batch_progress(self):
+        loader = DataLoader(RegressionDataset(), batch_size=4)
+        model = LinearRegressionModel()
+        output = io.StringIO()
+        with patch("src.training.trainer.sys.stdout", output):
+            train_model(
+                model=model,
+                train_loader=loader,
+                optimizer=torch.optim.SGD(model.parameters(), lr=0.01),
+                criterion=nn.MSELoss(),
+                epochs=1,
+                validation_loader=loader,
+                device="cpu",
+            )
+
+        self.assertIn("epoch 1/1 train", output.getvalue())
+        self.assertIn("epoch 1/1 val", output.getvalue())
+        self.assertIn("2/2 100%", output.getvalue())
+
+    @unittest.skipUnless(torch.cuda.is_available(), "CUDA is not available")
+    def test_trains_model_on_cuda(self):
+        loader = DataLoader(RegressionDataset(), batch_size=4)
+        model = LinearRegressionModel()
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+
+        history = train_model(
+            model=model,
+            train_loader=loader,
+            optimizer=optimizer,
+            criterion=nn.MSELoss(),
+            epochs=1,
+            validation_loader=loader,
+            device="cuda",
+        )
+
+        self.assertEqual(next(model.parameters()).device.type, "cuda")
+        self.assertEqual(len(history["train_loss"]), 1)
+        self.assertEqual(len(history["val_loss"]), 1)
+        self.assertTrue(torch.isfinite(torch.tensor(history["train_loss"])).all())
+        self.assertTrue(torch.isfinite(torch.tensor(history["val_loss"])).all())
+        self.assertTrue(optimizer.state)
+        for state in optimizer.state.values():
+            self.assertEqual(state["exp_avg"].device.type, "cuda")
+            self.assertEqual(state["exp_avg_sq"].device.type, "cuda")
+
     def test_saves_best_and_latest_checkpoints_separately(self):
         model = LinearRegressionModel()
         optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
         validation_losses = iter([0.5, 0.25, 0.75])
         training_epoch = 0
 
-        def fake_run_epoch(model, data_loader, criterion, device, target_key, optimizer=None):
+        def fake_run_epoch(
+            model,
+            data_loader,
+            criterion,
+            device,
+            target_key,
+            optimizer=None,
+            progress_label=None,
+        ):
             nonlocal training_epoch
             if optimizer is not None:
                 training_epoch += 1
