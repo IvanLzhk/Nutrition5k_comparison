@@ -1,3 +1,4 @@
 from .base_model import BaseModel
+from .simple_cnn import SimpleCNN
 
-__all__ = ["BaseModel"]
+__all__ = ["BaseModel", "SimpleCNN"]

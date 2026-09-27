@@ -6,13 +6,13 @@ import torchvision.transforms as T
 
 
 class Nutrition5kDataset(Dataset):
-    def __init__(self, metadata_path: str, imagery_root: str, transform=None, dish_ids=None):
+    def __init__(self, metadata_path: str, imagery_root: str, transform=None, dish_ids=None): # TODO: side angles перевернуті догори дригом, перевернути їх на якомусь етапі
         """
         Args:
-            metadata_path: шлях до CSV файлу метаданих (dish_metadata_cafe1.csv).
-            imagery_root: шлях до папки 'imagery' (що містить 'overhead' та 'side_angles').
-            transform: torchvision трансформації для зображень.
-            dish_ids: необов'язковий список/множина dish_id для train/val спліту.
+            metadata_path: CSV metadata file path (dish_metadata_cafe1.csv).
+            imagery_root: Path to the 'imagery' folder (containing 'overhead' and 'side_angles').
+            transform: torchvision transforms for images.
+            dish_ids: Optional list/set of dish_ids for train/val split.
         """
         self.imagery_root = imagery_root
         self.overhead_dir = os.path.join(imagery_root, "realsense_overhead")
@@ -22,7 +22,6 @@ class Nutrition5kDataset(Dataset):
         self.entries = []
         dish_filter = set(dish_ids) if dish_ids is not None else None
 
-        # Зчитування метаданих
         with open(metadata_path, "r", encoding="utf-8") as f:
             for line in f:
                 parts = line.strip().split(",")
@@ -42,14 +41,12 @@ class Nutrition5kDataset(Dataset):
                         float(parts[5]),  # protein (g)
                     ]
                 except ValueError:
-                    # Пропуск заголовка або битих рядків
                     continue
 
                 dish_overhead = os.path.join(self.overhead_dir, dish_id)
                 dish_side = os.path.join(self.side_angles_dir, dish_id)
 
-                # Перевірка наявності обох директорій
-                if os.path.isdir(dish_overhead) and os.path.isdir(dish_side):
+                if os.path.isdir(dish_overhead) or os.path.isdir(dish_side):
                     self.entries.append({
                         "dish_id": dish_id,
                         "targets": targets,
@@ -62,7 +59,10 @@ class Nutrition5kDataset(Dataset):
 
     def _get_image_paths(self, dish_folder: str):
         valid_exts = (".jpeg", ".jpg", ".png")
-        
+
+        if not os.path.isdir(dish_folder):
+            return []
+
         frames_dir = os.path.join(dish_folder, "frames_sampled25")
         target_dir = frames_dir if os.path.isdir(frames_dir) else dish_folder
 
@@ -82,22 +82,23 @@ class Nutrition5kDataset(Dataset):
     def __getitem__(self, idx):
         entry = self.entries[idx]
 
-        # 1. Завантаження RGB overhead кадру
+        # RGB overhead
         overhead_path = os.path.join(entry["overhead_path"], "rgb.png")
         if not os.path.isfile(overhead_path):
-            raise FileNotFoundError(f"Немає overhead RGB фото для: {entry['dish_id']}")
-        overhead_img = self._load_image(overhead_path)  # (C, H, W)
+            overhead_img = None
+        else:
+            overhead_img = self._load_image(overhead_path)  # (C, H, W)
 
-        # 2. Завантаження всіх наявних side_angles кадрів (V_i штук)
+        # side_angles
         side_files = self._get_image_paths(entry["side_path"])
-        if not side_files:
-            # Fallback: якщо раптом фото ракурсів відсутні, дублюємо overhead
-            side_files = [overhead_path]
-
         side_imgs = [self._load_image(p) for p in side_files]
-        side_tensor = torch.stack(side_imgs, dim=0)  # (V_i, C, H, W)
+        side_tensor = (
+            torch.stack(side_imgs, dim=0)
+            if side_imgs
+            else torch.empty((0,))
+        )
 
-        targets_tensor = torch.tensor(entry["targets"], dtype=torch.float32)  # (5,)
+        targets_tensor = torch.tensor(entry["targets"], dtype=torch.float32)
 
         return {
             "dish_id": entry["dish_id"],
@@ -114,19 +115,32 @@ def collate_nutrition5k(batch):
     batch_size = len(batch)
     dish_ids = [item["dish_id"] for item in batch]
 
-    overhead = torch.stack([item["overhead"] for item in batch], dim=0)
-    targets = torch.stack([item["targets"] for item in batch], dim=0)
-
+    overhead_images = []
     side_views_list = []
     dish_indices = []
 
-    for b_idx, item in enumerate(batch):
-        v = item["side_views"]
-        side_views_list.append(v)
+    for batch_index, item in enumerate(batch):
+        overhead_image = item["overhead"]
+        side_views = item["side_views"]
+        if overhead_image is None:
+            if side_views.ndim != 4 or side_views.size(0) == 0:
+                raise ValueError(
+                    f"Dish {item['dish_id']!r} has neither an overhead nor a side image."
+                )
+            overhead_image = side_views[0]
+        overhead_images.append(overhead_image)
 
-        dish_indices.extend([b_idx] * v.size(0))
+        if side_views.ndim == 4 and side_views.size(0) > 0:
+            side_views_list.append(side_views)
+            dish_indices.extend([batch_index] * side_views.size(0))
 
-    side_views = torch.cat(side_views_list, dim=0)
+    overhead = torch.stack(overhead_images, dim=0)
+    targets = torch.stack([item["targets"] for item in batch], dim=0)
+    side_views = (
+        torch.cat(side_views_list, dim=0)
+        if side_views_list
+        else overhead.new_empty((0, *overhead.shape[1:]))
+    )
     side_dish_indices = torch.tensor(dish_indices, dtype=torch.long)
 
     return {

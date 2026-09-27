@@ -81,6 +81,52 @@ class Nutrition5kDatasetTests(unittest.TestCase):
         )
         self.assertFalse(torch.isnan(batch["targets"]).any())
 
+    def test_collate_uses_side_image_when_overhead_is_missing(self):
+        (self.imagery_root / "realsense_overhead" / "dish-1" / "rgb.png").unlink()
+        loader = DataLoader(
+            self._make_dataset(),
+            batch_size=2,
+            collate_fn=collate_nutrition5k,
+        )
+
+        batch = next(iter(loader))
+
+        torch.testing.assert_close(batch["overhead"][0], batch["side_views"][0])
+        self.assertEqual(batch["overhead"].shape, (2, 3, 4, 4))
+
+    def test_collate_handles_missing_side_images(self):
+        side_dir = self.imagery_root / "side_angles" / "dish-1" / "frames_sampled25"
+        for image_path in side_dir.iterdir():
+            image_path.unlink()
+        loader = DataLoader(
+            self._make_dataset(),
+            batch_size=2,
+            collate_fn=collate_nutrition5k,
+        )
+
+        batch = next(iter(loader))
+
+        self.assertEqual(batch["side_views"].shape, (2, 3, 4, 4))
+        torch.testing.assert_close(
+            batch["side_dish_indices"], torch.tensor([1, 1], dtype=torch.long)
+        )
+
+    def test_collate_handles_batch_without_any_side_images(self):
+        for dish_id in ("dish-1", "dish-2"):
+            side_dir = self.imagery_root / "side_angles" / dish_id / "frames_sampled25"
+            for image_path in side_dir.iterdir():
+                image_path.unlink()
+        loader = DataLoader(
+            self._make_dataset(),
+            batch_size=2,
+            collate_fn=collate_nutrition5k,
+        )
+
+        batch = next(iter(loader))
+
+        self.assertEqual(batch["side_views"].shape, (0, 3, 4, 4))
+        self.assertEqual(batch["side_dish_indices"].shape, (0,))
+
 
 if __name__ == "__main__":
     unittest.main()
