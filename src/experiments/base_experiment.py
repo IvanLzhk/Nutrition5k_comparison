@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 import json
 from pathlib import Path
@@ -7,7 +7,6 @@ from typing import Any
 
 from torch import nn
 from torch.optim import Optimizer
-import torchvision.transforms as T
 
 from src.models import BaseModel
 from src.training import test_model, train_model
@@ -29,7 +28,7 @@ class BaseExperiment(ABC):
 		epochs: int,
 		folds: int | None,
 		accuracy_tolerance_percent: float,
-		augmentation_enabled: bool,
+		augmentation_factory: Callable[[], Any] | None,
 		checkpoint_root: Path,
 		model_name: str,
 		test_loader: Iterable[Mapping[str, Any]],
@@ -41,8 +40,8 @@ class BaseExperiment(ABC):
 		self.epochs = epochs
 		self.folds = folds
 		self.accuracy_tolerance_percent = accuracy_tolerance_percent
-		self.train_augmentation = self._build_train_augmentation(
-			enabled=augmentation_enabled
+		self.train_augmentation = (
+			augmentation_factory() if augmentation_factory is not None else None
 		)
 		self.checkpoint_root = checkpoint_root
 		self.model_name = model_name
@@ -51,20 +50,6 @@ class BaseExperiment(ABC):
 		self.target_names = target_names
 		self.criterion = criterion
 		self.device = device
-
-	@staticmethod
-	def _build_train_augmentation(*, enabled: bool = True):
-		if not enabled:
-			return None
-
-		# Edit this list to experiment with training-image augmentation.
-		return T.Compose(
-			[
-				T.RandomHorizontalFlip(p=0.5),
-				T.RandomRotation(degrees=8),
-				T.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1),
-			]
-		)
 
 	@abstractmethod
 	def _get_splits(self) -> Iterable[tuple[list[str], list[str]]]:

@@ -9,9 +9,9 @@ import torch
 import torchvision.transforms as T
 from torch.utils.data import DataLoader
 
-from src.experiments.base_experiment import BaseExperiment
 from src.experiments.cnn_experiment import CNNExperiment
 from src.dataset.Nutrition5kDataset import Nutrition5kDataset, collate_nutrition5k
+from main import build_train_augmentation
 
 
 
@@ -213,12 +213,11 @@ class Nutrition5kDatasetTests(unittest.TestCase):
         batch = next(iter(DataLoader(train_dataset, batch_size=2)))
         self.assertEqual(batch["overhead"].shape, (2, 3, 4, 4))
 
-    def test_base_experiment_owns_default_train_augmentation(self):
-        augmentation = BaseExperiment._build_train_augmentation()
+    def test_main_builds_default_train_augmentation(self):
+        augmentation = build_train_augmentation()
 
         self.assertIsInstance(augmentation, T.Compose)
         self.assertEqual(len(augmentation.transforms), 3)
-        self.assertIsNone(BaseExperiment._build_train_augmentation(enabled=False))
 
     def test_collate_handles_different_numbers_of_side_views(self):
         loader = DataLoader(

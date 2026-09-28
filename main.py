@@ -1,6 +1,18 @@
 from pathlib import Path
 
+import torchvision.transforms as T
+
 from src.experiments.cnn_experiment import CNNExperiment
+
+
+def build_train_augmentation() -> T.Compose:
+	return T.Compose(
+		[
+			T.RandomHorizontalFlip(p=0.5),
+			T.RandomRotation(degrees=8),
+			T.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1),
+		]
+	)
 
 
 # Experiment settings
@@ -12,7 +24,7 @@ LEARNING_RATE = 1e-3
 ACCURACY_TOLERANCE_PERCENT = 10.0
 IMAGE_SIZE = 128
 CACHE_DIR = Path("data/cache/nutrition5k")
-AUGMENTATION_ENABLED = True
+AUGMENTATION_FACTORY = build_train_augmentation
 NUM_LAYERS = 4
 WIDTH = 64
 
@@ -27,7 +39,7 @@ def main() -> None:
 		accuracy_tolerance_percent=ACCURACY_TOLERANCE_PERCENT,
 		image_size=IMAGE_SIZE,
 		cache_dir=CACHE_DIR,
-		augmentation_enabled=AUGMENTATION_ENABLED,
+		augmentation_factory=AUGMENTATION_FACTORY,
 		num_layers=NUM_LAYERS,
 		width=WIDTH,
 	).run()

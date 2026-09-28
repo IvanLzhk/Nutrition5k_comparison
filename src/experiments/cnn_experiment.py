@@ -1,5 +1,7 @@
 import datetime
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import torch
 from torch import nn
@@ -28,6 +30,7 @@ class CNNExperiment(BaseExperiment):
 	def __init__(
 		self,
 		*,
+		augmentation_factory: Callable[[], Any] | None,
 		epochs: int = 50,
 		folds: int | None = None,
 		batch_size: int = BATCH_SIZE,
@@ -36,7 +39,6 @@ class CNNExperiment(BaseExperiment):
 		accuracy_tolerance_percent: float = 10.0,
 		image_size: int = 128,
 		cache_dir: Path | None = Path("data/cache/nutrition5k"),
-		augmentation_enabled: bool = True,
 		num_layers: int = 4,
 		width: int = 64,
 	) -> None:
@@ -66,7 +68,7 @@ class CNNExperiment(BaseExperiment):
 			epochs=epochs,
 			folds=folds,
 			accuracy_tolerance_percent=accuracy_tolerance_percent,
-			augmentation_enabled=augmentation_enabled,
+			augmentation_factory=augmentation_factory,
 			checkpoint_root=checkpoint_root,
 			model_name="simple_cnn",
 			test_loader=test_loader,
