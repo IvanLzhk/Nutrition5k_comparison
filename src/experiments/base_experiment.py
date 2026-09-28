@@ -7,6 +7,7 @@ from typing import Any
 
 from torch import nn
 from torch.optim import Optimizer
+import torchvision.transforms as T
 
 from src.models import BaseModel
 from src.training import test_model, train_model
@@ -35,6 +36,9 @@ class BaseExperiment(ABC):
 		device: str,
 	) -> None:
 		self.args = args
+		self.train_augmentation = self._build_train_augmentation(
+			enabled=not getattr(args, "no_augmentation", False)
+		)
 		self.checkpoint_root = checkpoint_root
 		self.model_name = model_name
 		self.test_loader = test_loader
@@ -42,6 +46,20 @@ class BaseExperiment(ABC):
 		self.target_names = target_names
 		self.criterion = criterion
 		self.device = device
+
+	@staticmethod
+	def _build_train_augmentation(*, enabled: bool = True):
+		if not enabled:
+			return None
+
+		# Edit this list to experiment with training-image augmentation.
+		return T.Compose(
+			[
+				T.RandomHorizontalFlip(p=0.5),
+				T.RandomRotation(degrees=8),
+				T.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1),
+			]
+		)
 
 	@abstractmethod
 	def _get_splits(self) -> Iterable[tuple[list[str], list[str]]]:

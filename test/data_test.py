@@ -9,6 +9,8 @@ import torch
 import torchvision.transforms as T
 from torch.utils.data import DataLoader
 
+from src.experiments.base_experiment import BaseExperiment
+from src.experiments.cnn_experiment import CNNExperiment
 from src.dataset.Nutrition5kDataset import Nutrition5kDataset, collate_nutrition5k
 
 
@@ -174,6 +176,49 @@ class Nutrition5kDatasetTests(unittest.TestCase):
         second = dataset[1]["overhead"]
 
         torch.testing.assert_close(second - first, torch.ones_like(first))
+
+    def test_cnn_augmentation_changes_train_images_without_expanding_batches(self):
+        side_path = (
+            self.imagery_root
+            / "side_angles"
+            / "dish-1"
+            / "frames_sampled25"
+            / "frame_0.png"
+        )
+        image = Image.new("RGB", (8, 8))
+        for y in range(8):
+            for x in range(8):
+                image.putpixel((x, y), (255, 0, 0) if x < 4 else (0, 0, 255))
+        image.save(side_path)
+
+        experiment = object.__new__(CNNExperiment)
+        experiment.metadata_path = self.metadata_path
+        experiment.imagery_root = self.imagery_root
+        experiment.transform = T.Compose([T.Resize((4, 4)), T.ToTensor()])
+        experiment.cache_dir = None
+        experiment.train_augmentation = T.RandomHorizontalFlip(p=1.0)
+        train_dataset = experiment._create_dataset(["dish-1"], training=True)
+        evaluation_dataset = experiment._create_dataset(["dish-1"])
+
+        self.assertEqual(len(train_dataset), len(evaluation_dataset))
+        self.assertIsNotNone(train_dataset.augmentation)
+        self.assertIsNone(evaluation_dataset.augmentation)
+        self.assertFalse(
+            torch.equal(
+                train_dataset[1]["overhead"],
+                evaluation_dataset[1]["overhead"],
+            )
+        )
+
+        batch = next(iter(DataLoader(train_dataset, batch_size=2)))
+        self.assertEqual(batch["overhead"].shape, (2, 3, 4, 4))
+
+    def test_base_experiment_owns_default_train_augmentation(self):
+        augmentation = BaseExperiment._build_train_augmentation()
+
+        self.assertIsInstance(augmentation, T.Compose)
+        self.assertEqual(len(augmentation.transforms), 3)
+        self.assertIsNone(BaseExperiment._build_train_augmentation(enabled=False))
 
     def test_collate_handles_different_numbers_of_side_views(self):
         loader = DataLoader(

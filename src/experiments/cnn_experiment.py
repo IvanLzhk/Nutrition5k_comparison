@@ -65,7 +65,9 @@ class CNNExperiment(BaseExperiment):
 			if line.strip()
 		]
 
-	def _create_dataset(self, dish_ids: list[str]) -> Nutrition5kDataset:
+	def _create_dataset(
+		self, dish_ids: list[str], *, training: bool = False
+	) -> Nutrition5kDataset:
 		return Nutrition5kDataset(
 			str(self.metadata_path),
 			str(self.imagery_root),
@@ -73,6 +75,7 @@ class CNNExperiment(BaseExperiment):
 			dish_ids=dish_ids,
 			image_level=True,
 			cache_dir=str(self.cache_dir) if self.cache_dir is not None else None,
+			augmentation=self.train_augmentation if training else None,
 		)
 
 	def _create_loader(
@@ -106,7 +109,7 @@ class CNNExperiment(BaseExperiment):
 		validation_ids: list[str],
 		run_label: str,
 	) -> FoldSetup:
-		train_dataset = self._create_dataset(train_ids)
+		train_dataset = self._create_dataset(train_ids, training=True)
 		validation_dataset = self._create_dataset(validation_ids)
 		if not train_dataset or not validation_dataset:
 			raise ValueError(

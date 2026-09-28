@@ -31,6 +31,11 @@ def main() -> None:
 		help="Disable the preprocessed image cache.",
 	)
 	parser.add_argument(
+		"--no-augmentation",
+		action="store_true",
+		help="Disable random training-image augmentation.",
+	)
+	parser.add_argument(
 		"--num-layers",
 		type=int,
 		default=4,
