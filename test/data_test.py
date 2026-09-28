@@ -213,6 +213,18 @@ class Nutrition5kDatasetTests(unittest.TestCase):
         batch = next(iter(DataLoader(train_dataset, batch_size=2)))
         self.assertEqual(batch["overhead"].shape, (2, 3, 4, 4))
 
+    def test_experiment_loader_persists_workers_when_enabled(self):
+        experiment = object.__new__(CNNExperiment)
+        experiment.batch_size = 2
+        experiment.num_workers = 1
+
+        loader = experiment._create_loader(self._make_dataset())
+        self.assertTrue(loader.persistent_workers)
+
+        experiment.num_workers = 0
+        loader = experiment._create_loader(self._make_dataset())
+        self.assertFalse(loader.persistent_workers)
+
     def test_main_builds_default_train_augmentation(self):
         augmentation = build_train_augmentation()
 

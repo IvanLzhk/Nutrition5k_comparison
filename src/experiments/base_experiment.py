@@ -7,6 +7,7 @@ from typing import Any
 
 from torch import nn
 from torch.optim import Optimizer
+from torch.utils.data import DataLoader, Dataset, Sampler
 
 from src.models import BaseModel
 from src.training import test_model, train_model
@@ -29,9 +30,11 @@ class BaseExperiment(ABC):
 		folds: int | None,
 		accuracy_tolerance_percent: float,
 		augmentation_factory: Callable[[], Any] | None,
+		batch_size: int,
+		num_workers: int,
 		checkpoint_root: Path,
 		model_name: str,
-		test_loader: Iterable[Mapping[str, Any]],
+		test_dataset: Dataset,
 		test_dish_count: int,
 		target_names: list[str],
 		criterion: nn.Module,
@@ -40,16 +43,32 @@ class BaseExperiment(ABC):
 		self.epochs = epochs
 		self.folds = folds
 		self.accuracy_tolerance_percent = accuracy_tolerance_percent
+		self.batch_size = batch_size
+		self.num_workers = num_workers
 		self.train_augmentation = (
 			augmentation_factory() if augmentation_factory is not None else None
 		)
 		self.checkpoint_root = checkpoint_root
 		self.model_name = model_name
-		self.test_loader = test_loader
+		self.test_loader = self._create_loader(test_dataset)
 		self.test_dish_count = test_dish_count
 		self.target_names = target_names
 		self.criterion = criterion
 		self.device = device
+
+	def _create_loader(
+		self,
+		dataset: Dataset,
+		sampler: Sampler | None = None,
+	) -> DataLoader:
+		return DataLoader(
+			dataset,
+			batch_size=self.batch_size,
+			num_workers=self.num_workers,
+			pin_memory=True,
+			persistent_workers=self.num_workers > 0,
+			sampler=sampler,
+		)
 
 	@abstractmethod
 	def _get_splits(self) -> Iterable[tuple[list[str], list[str]]]:

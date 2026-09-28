@@ -5,7 +5,7 @@ from typing import Any
 
 import torch
 from torch import nn
-from torch.utils.data import DataLoader, WeightedRandomSampler
+from torch.utils.data import WeightedRandomSampler
 import torchvision.transforms as T
 
 from setup import (
@@ -42,8 +42,6 @@ class CNNExperiment(BaseExperiment):
 		num_layers: int = 4,
 		width: int = 64,
 	) -> None:
-		self.batch_size = batch_size
-		self.num_workers = num_workers
 		self.learning_rate = learning_rate
 		self.image_size = image_size
 		self.num_layers = num_layers
@@ -58,7 +56,6 @@ class CNNExperiment(BaseExperiment):
 		test_dataset = self._create_dataset(self.test_ids)
 		if not test_dataset:
 			raise ValueError("The configured test IDs produced an empty test dataset.")
-		test_loader = self._create_loader(test_dataset)
 		checkpoint_root = (
 			Path(MODEL_CHECKPOINT_DIR)
 			/ "simple_cnn"
@@ -69,9 +66,11 @@ class CNNExperiment(BaseExperiment):
 			folds=folds,
 			accuracy_tolerance_percent=accuracy_tolerance_percent,
 			augmentation_factory=augmentation_factory,
+			batch_size=batch_size,
+			num_workers=num_workers,
 			checkpoint_root=checkpoint_root,
 			model_name="simple_cnn",
-			test_loader=test_loader,
+			test_dataset=test_dataset,
 			test_dish_count=len(self.test_ids),
 			target_names=self.TARGET_NAMES,
 			criterion=nn.MSELoss(),
@@ -97,19 +96,6 @@ class CNNExperiment(BaseExperiment):
 			image_level=True,
 			cache_dir=str(self.cache_dir) if self.cache_dir is not None else None,
 			augmentation=self.train_augmentation if training else None,
-		)
-
-	def _create_loader(
-		self,
-		dataset: Nutrition5kDataset,
-		sampler: WeightedRandomSampler | None = None,
-	) -> DataLoader:
-		return DataLoader(
-			dataset,
-			batch_size=self.batch_size,
-			num_workers=self.num_workers,
-			pin_memory=True,
-			sampler=sampler,
 		)
 
 	def _get_splits(self) -> list[tuple[list[str], list[str]]]:
