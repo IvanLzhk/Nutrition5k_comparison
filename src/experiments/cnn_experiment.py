@@ -26,6 +26,11 @@ class CNNExperiment(BaseExperiment):
 
 	def __init__(self, args: Any) -> None:
 		self.args = args
+		self.cache_dir = (
+			None
+			if getattr(args, "no_cache", False)
+			else Path(getattr(args, "cache_dir", "data/cache/nutrition5k"))
+		)
 		self.metadata_path = Path(METADATA_PATH)
 		self.imagery_root = Path(IMAGERY_ROOT)
 		self.transform = T.Compose(
@@ -67,6 +72,7 @@ class CNNExperiment(BaseExperiment):
 			transform=self.transform,
 			dish_ids=dish_ids,
 			image_level=True,
+			cache_dir=str(self.cache_dir) if self.cache_dir is not None else None,
 		)
 
 	def _create_loader(

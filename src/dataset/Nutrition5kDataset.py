@@ -1,4 +1,8 @@
+import hashlib
+import json
 import os
+import tempfile
+from pathlib import Path
 from PIL import Image
 import torch
 from torch.utils.data import Dataset
@@ -6,7 +10,18 @@ import torchvision.transforms as T
 
 
 class Nutrition5kDataset(Dataset):
-    def __init__(self, metadata_path: str, imagery_root: str, transform=None, dish_ids=None, image_level=False): # TODO: side angles перевернуті догори дригом, перевернути їх на якомусь етапі
+    CACHE_VERSION = 1
+
+    def __init__(
+        self,
+        metadata_path: str,
+        imagery_root: str,
+        transform=None,
+        dish_ids=None,
+        image_level=False,
+        cache_dir=None,
+        augmentation=None,
+    ):
         """
         Args:
             metadata_path: CSV metadata file path (dish_metadata_cafe1.csv).
@@ -16,10 +31,13 @@ class Nutrition5kDataset(Dataset):
             image_level: Return each overhead or side image as its own labeled sample.
         """
         self.imagery_root = imagery_root
+        self.imagery_root_path = Path(imagery_root).resolve()
         self.overhead_dir = os.path.join(imagery_root, "realsense_overhead")
         self.side_angles_dir = os.path.join(imagery_root, "side_angles")
         self.transform = transform
         self.image_level = image_level
+        self.cache_dir = Path(cache_dir) if cache_dir is not None else None
+        self.augmentation = augmentation
 
         self.entries = []
         dish_filter = set(dish_ids) if dish_ids is not None else None
@@ -94,11 +112,73 @@ class Nutrition5kDataset(Dataset):
         ]
         return paths
 
-    def _load_image(self, path: str):
-        img = Image.open(path).convert("RGB")
-        if self.transform:
-            return self.transform(img)
-        return T.ToTensor()(img)
+    def _cache_path(self, path: str, flip_vertical: bool) -> Path | None:
+        if self.cache_dir is None:
+            return None
+
+        source_path = Path(path).resolve()
+        source_stat = source_path.stat()
+        cache_identity = {
+            "version": self.CACHE_VERSION,
+            "imagery_root": str(self.imagery_root_path),
+            "source": os.path.relpath(source_path, self.imagery_root_path),
+            "source_size": source_stat.st_size,
+            "source_mtime_ns": source_stat.st_mtime_ns,
+            "transform": repr(self.transform),
+            "flip_vertical": flip_vertical,
+        }
+        cache_key = hashlib.sha256(
+            json.dumps(cache_identity, sort_keys=True).encode("utf-8")
+        ).hexdigest()
+        return self.cache_dir / f"{cache_key}.png"
+
+    def _load_image(self, path: str, flip_vertical: bool = False):
+        cache_path = self._cache_path(path, flip_vertical)
+        if cache_path is not None and cache_path.is_file():
+            try:
+                with Image.open(cache_path) as cached_image:
+                    tensor = T.ToTensor()(cached_image.convert("RGB"))
+            except OSError:
+                cache_path.unlink(missing_ok=True)
+            else:
+                return self.augmentation(tensor) if self.augmentation else tensor
+
+        with Image.open(path) as image_file:
+            img = image_file.convert("RGB")
+        tensor = self.transform(img) if self.transform else T.ToTensor()(img)
+        if flip_vertical:
+            tensor = torch.flip(tensor, dims=[1])
+
+        if cache_path is not None:
+            if (
+                not isinstance(tensor, torch.Tensor)
+                or tensor.ndim != 3
+                or tensor.size(0) != 3
+                or tensor.is_floating_point()
+                and (tensor.min().item() < 0 or tensor.max().item() > 1)
+            ):
+                raise ValueError(
+                    "Image caching requires a 3-channel image tensor with values in [0, 1]."
+                )
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            temporary_path = None
+            try:
+                with tempfile.NamedTemporaryFile(
+                    dir=cache_path.parent,
+                    prefix=f"{cache_path.stem}.",
+                    suffix=".tmp",
+                    delete=False,
+                ) as temporary_file:
+                    temporary_path = Path(temporary_file.name)
+                T.ToPILImage()(tensor.detach().cpu()).save(
+                    temporary_path, format="PNG"
+                )
+                os.replace(temporary_path, cache_path)
+            finally:
+                if temporary_path is not None:
+                    temporary_path.unlink(missing_ok=True)
+
+        return self.augmentation(tensor) if self.augmentation else tensor
 
     def __getitem__(self, idx):
         if self.image_level:
@@ -106,7 +186,9 @@ class Nutrition5kDataset(Dataset):
             return {
                 "dish_id": entry["dish_id"],
                 "view_type": view_type,
-                "overhead": self._load_image(image_path),
+                "overhead": self._load_image(
+                    image_path, flip_vertical=view_type == "side"
+                ),
                 "targets": torch.tensor(entry["targets"], dtype=torch.float32),
             }
 
@@ -121,7 +203,7 @@ class Nutrition5kDataset(Dataset):
 
         # side_angles
         side_files = self._get_image_paths(entry["side_path"])
-        side_imgs = [torch.flip(self._load_image(p), dims=[1]) for p in side_files]
+        side_imgs = [self._load_image(p, flip_vertical=True) for p in side_files]
         side_tensor = (
             torch.stack(side_imgs, dim=0)
             if side_imgs

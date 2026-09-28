@@ -1,4 +1,5 @@
 import csv
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -44,11 +45,16 @@ class Nutrition5kDatasetTests(unittest.TestCase):
                 side_dir / f"frame_{index}.png"
             )
 
-    def _make_dataset(self):
+    def _make_dataset(
+        self, cache_dir=None, image_level=False, transform=None, augmentation=None
+    ):
         return Nutrition5kDataset(
             metadata_path=str(self.metadata_path),
             imagery_root=str(self.imagery_root),
-            transform=T.Compose([T.Resize((4, 4)), T.ToTensor()]),
+            transform=transform or T.Compose([T.Resize((4, 4)), T.ToTensor()]),
+            cache_dir=str(cache_dir) if cache_dir is not None else None,
+            image_level=image_level,
+            augmentation=augmentation,
         )
 
     def test_image_level_dataset_returns_each_view_as_a_sample(self):
@@ -84,6 +90,90 @@ class Nutrition5kDatasetTests(unittest.TestCase):
         torch.testing.assert_close(
             sample["targets"], torch.tensor([100, 200, 10, 20, 30], dtype=torch.float32)
         )
+
+    def test_image_level_flips_side_images_but_not_overhead(self):
+        side_path = (
+            self.imagery_root
+            / "side_angles"
+            / "dish-1"
+            / "frames_sampled25"
+            / "frame_0.png"
+        )
+        image = Image.new("RGB", (8, 8))
+        for y in range(8):
+            color = (255, 0, 0) if y < 4 else (0, 0, 255)
+            for x in range(8):
+                image.putpixel((x, y), color)
+        image.save(side_path)
+
+        dataset = self._make_dataset(image_level=True)
+        overhead = dataset[0]["overhead"]
+        side = dataset[1]["overhead"]
+        with Image.open(side_path) as source:
+            expected_side = T.Compose(
+                [T.Resize((4, 4)), T.ToTensor()]
+            )(source.convert("RGB"))
+
+        torch.testing.assert_close(side, torch.flip(expected_side, dims=[1]))
+        self.assertFalse(torch.equal(overhead, side))
+
+    def test_image_cache_reuses_and_invalidates_transformed_side_images(self):
+        cache_dir = self.root / "cache"
+        dataset = self._make_dataset(cache_dir=cache_dir, image_level=True)
+
+        first = dataset[1]["overhead"]
+        cache_files = list(cache_dir.glob("*.png"))
+        self.assertEqual(len(cache_files), 1)
+        cached_mtime = cache_files[0].stat().st_mtime_ns
+
+        cached = dataset[1]["overhead"]
+        torch.testing.assert_close(cached, first)
+        self.assertEqual(cache_files[0].stat().st_mtime_ns, cached_mtime)
+
+        source_path = Path(dataset.image_samples[1][1])
+        source_stat = source_path.stat()
+        Image.new("RGB", (8, 8), color=(255, 0, 0)).save(source_path)
+        os.utime(
+            source_path,
+            ns=(source_stat.st_atime_ns, source_stat.st_mtime_ns + 1_000_000_000),
+        )
+
+        updated = dataset[1]["overhead"]
+        self.assertFalse(torch.equal(updated, first))
+        self.assertEqual(len(list(cache_dir.glob("*.png"))), 2)
+
+    def test_image_cache_key_includes_transform_settings(self):
+        cache_dir = self.root / "cache"
+        self._make_dataset(cache_dir=cache_dir, image_level=True)[1]
+        small_transform = T.Compose([T.Resize((2, 2)), T.ToTensor()])
+        small_dataset = self._make_dataset(
+            cache_dir=cache_dir, image_level=True, transform=small_transform
+        )
+
+        small_image = small_dataset[1]["overhead"]
+
+        self.assertEqual(small_image.shape, (3, 2, 2))
+        self.assertEqual(len(list(cache_dir.glob("*.png"))), 2)
+
+    def test_augmentation_runs_after_cache_load_on_every_access(self):
+        cache_dir = self.root / "cache"
+        call_count = 0
+
+        def add_call_count(tensor):
+            nonlocal call_count
+            call_count += 1
+            return tensor + call_count
+
+        dataset = self._make_dataset(
+            cache_dir=cache_dir,
+            image_level=True,
+            augmentation=add_call_count,
+        )
+
+        first = dataset[1]["overhead"]
+        second = dataset[1]["overhead"]
+
+        torch.testing.assert_close(second - first, torch.ones_like(first))
 
     def test_collate_handles_different_numbers_of_side_views(self):
         loader = DataLoader(

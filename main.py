@@ -1,4 +1,5 @@
 import argparse
+from pathlib import Path
 
 from setup import BATCH_SIZE, NUM_WORKERS
 from src.experiments.cnn_experiment import CNNExperiment
@@ -18,6 +19,17 @@ def main() -> None:
 	parser.add_argument("--learning-rate", type=float, default=1e-3)
 	parser.add_argument("--accuracy-tolerance-percent", type=float, default=10.0)
 	parser.add_argument("--image-size", type=int, default=128)
+	parser.add_argument(
+		"--cache-dir",
+		type=Path,
+		default=Path("data/cache/nutrition5k"),
+		help="Directory for lazily cached preprocessed images.",
+	)
+	parser.add_argument(
+		"--no-cache",
+		action="store_true",
+		help="Disable the preprocessed image cache.",
+	)
 	parser.add_argument(
 		"--num-layers",
 		type=int,
