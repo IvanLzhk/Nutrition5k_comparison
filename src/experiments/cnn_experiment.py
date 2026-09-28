@@ -99,6 +99,7 @@ class CNNExperiment(BaseExperiment):
 		)
 
 	def _get_splits(self) -> list[tuple[list[str], list[str]]]:
+		# Build a set of train/validation partitions. Each partition is one fold.
 		n_splits = self.folds if self.folds is not None else 5
 		splits = get_kfold_splits(
 			n_splits=n_splits,
@@ -116,6 +117,7 @@ class CNNExperiment(BaseExperiment):
 		validation_ids: list[str],
 		run_label: str,
 	) -> FoldSetup:
+		# A fold = one model training run on one slice of the dataset.
 		train_dataset = self._create_dataset(train_ids, training=True)
 		validation_dataset = self._create_dataset(validation_ids)
 		if not train_dataset or not validation_dataset:
@@ -123,6 +125,12 @@ class CNNExperiment(BaseExperiment):
 				f"{run_label} has an empty train or validation dataset. "
 				"Check the configured training IDs and available imagery."
 			)
+		training_targets = torch.tensor(
+			[entry["targets"] for entry in train_dataset.entries],
+			dtype=torch.float32,
+		)
+		target_mean = training_targets.mean(dim=0)
+		target_std = training_targets.std(dim=0, unbiased=False).clamp_min(1e-6)
 
 		train_sampler = WeightedRandomSampler(
 			train_dataset.sample_weights,
@@ -148,6 +156,8 @@ class CNNExperiment(BaseExperiment):
 			"image_size": self.image_size,
 			"num_layers": self.num_layers,
 			"width": self.width,
+			"target_mean": target_mean.tolist(),
+			"target_std": target_std.tolist(),
 		}
 		return FoldSetup(
 			model=model,
@@ -155,4 +165,6 @@ class CNNExperiment(BaseExperiment):
 			validation_loader=validation_loader,
 			optimizer=optimizer,
 			model_config=model_config,
+			target_mean=target_mean,
+			target_std=target_std,
 		)

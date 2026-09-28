@@ -99,6 +99,33 @@ class TrainModelTests(unittest.TestCase):
             metrics["percentage_metric_sample_count"], {"first": 1, "second": 2}
         )
 
+    def test_standardized_targets_keep_reported_metrics_in_original_units(self):
+        class ZeroModel(BaseModel):
+            def forward(self, batch):
+                return torch.zeros_like(batch["features"])
+
+        samples = [
+            {"features": torch.zeros(2), "targets": torch.tensor([12.0, 24.0])},
+            {"features": torch.zeros(2), "targets": torch.tensor([8.0, 16.0])},
+        ]
+        loader = DataLoader(samples, batch_size=2)
+
+        metrics = test_model(
+            ZeroModel(),
+            loader,
+            nn.MSELoss(),
+            device="cpu",
+            progress_label=None,
+            target_names=["first", "second"],
+            target_mean=torch.tensor([10.0, 20.0]),
+            target_std=torch.tensor([2.0, 4.0]),
+        )
+
+        self.assertEqual(metrics["loss"], 1.0)
+        self.assertEqual(metrics["mae"], {"first": 2.0, "second": 4.0})
+        self.assertAlmostEqual(metrics["r2"]["first"], 0.0)
+        self.assertAlmostEqual(metrics["r2"]["second"], 0.0)
+
     def test_base_model_checkpoint_restores_weights_optimizer_and_progress(self):
         model = LinearRegressionModel()
         optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
@@ -248,6 +275,8 @@ class TrainModelTests(unittest.TestCase):
             target_key,
             optimizer=None,
             progress_label=None,
+            target_mean=None,
+            target_std=None,
         ):
             nonlocal training_epoch
             if optimizer is not None:

@@ -55,6 +55,8 @@ def _predict_batch(
     raw_batch: Mapping[str, Any],
     device: torch.device,
     target_key: str,
+    target_mean: Optional[Tensor] = None,
+    target_std: Optional[Tensor] = None,
 ) -> tuple[Tensor, Tensor]:
     if target_key not in raw_batch:
         raise KeyError(f"Batch is missing target field {target_key!r}.")
@@ -65,6 +67,7 @@ def _predict_batch(
         raise TypeError(f"Batch field {target_key!r} must be a tensor.")
     if targets.ndim == 0:
         raise ValueError("The target tensor must include a batch dimension.")
+    targets = _standardize_targets(targets, target_mean, target_std)
 
     model_inputs = {key: value for key, value in batch.items() if key != target_key}
     predictions = model(model_inputs)
@@ -79,14 +82,70 @@ def _predict_batch(
     return predictions, targets
 
 
+def _standardize_targets(
+    targets: Tensor,
+    target_mean: Optional[Tensor],
+    target_std: Optional[Tensor],
+) -> Tensor:
+    if target_mean is None and target_std is None:
+        return targets
+    if target_mean is None or target_std is None:
+        raise ValueError("target_mean and target_std must be provided together.")
+
+    mean = torch.as_tensor(target_mean, device=targets.device, dtype=targets.dtype)
+    standard_deviation = torch.as_tensor(
+        target_std, device=targets.device, dtype=targets.dtype
+    )
+    if (
+        mean.ndim != 1
+        or standard_deviation.shape != mean.shape
+        or mean.numel() != targets.shape[-1]
+    ):
+        raise ValueError("Target statistics must match the target output dimension.")
+    if (
+        not torch.isfinite(mean).all()
+        or not torch.isfinite(standard_deviation).all()
+        or (standard_deviation <= 0).any()
+    ):
+        raise ValueError("Target statistics must be finite with positive standard deviations.")
+    return (targets - mean) / standard_deviation
+
+
+def _restore_target_scale(
+    values: Tensor,
+    target_mean: Optional[Tensor],
+    target_std: Optional[Tensor],
+) -> Tensor:
+    if target_mean is None and target_std is None:
+        return values
+    if target_mean is None or target_std is None:
+        raise ValueError("target_mean and target_std must be provided together.")
+
+    mean = torch.as_tensor(target_mean, device=values.device, dtype=values.dtype)
+    standard_deviation = torch.as_tensor(
+        target_std, device=values.device, dtype=values.dtype
+    )
+    if (
+        mean.ndim != 1
+        or standard_deviation.shape != mean.shape
+        or mean.numel() != values.shape[-1]
+    ):
+        raise ValueError("Target statistics must match the target output dimension.")
+    return values * standard_deviation + mean
+
+
 def _compute_batch_loss(
     model: BaseModel,
     raw_batch: Mapping[str, Any],
     criterion: Callable[[Tensor, Tensor], Tensor],
     device: torch.device,
     target_key: str,
+    target_mean: Optional[Tensor] = None,
+    target_std: Optional[Tensor] = None,
 ) -> tuple[Tensor, int]:
-    predictions, targets = _predict_batch(model, raw_batch, device, target_key)
+    predictions, targets = _predict_batch(
+        model, raw_batch, device, target_key, target_mean, target_std
+    )
     loss = criterion(predictions, targets)
     if not isinstance(loss, Tensor) or loss.numel() != 1:
         raise ValueError("The criterion must return a scalar tensor.")
@@ -101,6 +160,8 @@ def _run_epoch(
     target_key: str,
     optimizer: Optional[Optimizer] = None,
     progress_label: Optional[str] = None,
+    target_mean: Optional[Tensor] = None,
+    target_std: Optional[Tensor] = None,
 ) -> float:
     training = optimizer is not None
     model.train(training)
@@ -119,7 +180,13 @@ def _run_epoch(
             if not isinstance(raw_batch, Mapping):
                 raise TypeError("Each data-loader batch must be a mapping.")
             loss, batch_size = _compute_batch_loss(
-                model, raw_batch, criterion, device, target_key
+                model,
+                raw_batch,
+                criterion,
+                device,
+                target_key,
+                target_mean,
+                target_std,
             )
 
             if training:
@@ -160,6 +227,8 @@ def train_model(
     resume_from: Optional[Union[str, Path]] = None,
     model_config: Optional[Mapping[str, Any]] = None,
     progress_label: Optional[str] = None,
+    target_mean: Optional[Tensor] = None,
+    target_std: Optional[Tensor] = None,
 ) -> dict[str, list[float]]:
     """Train a ``BaseModel`` on CUDA by default and return sample-weighted losses.
 
@@ -218,6 +287,8 @@ def train_model(
                 target_key,
                 optimizer,
                 progress_label=f"{epoch_label} train",
+                target_mean=target_mean,
+                target_std=target_std,
             )
         )
         if validation_loader is not None:
@@ -228,6 +299,8 @@ def train_model(
                 selected_device,
                 target_key,
                 progress_label=f"{epoch_label} val",
+                target_mean=target_mean,
+                target_std=target_std,
             )
             history["val_loss"].append(val_loss)
             if best_val_loss is None or val_loss < best_val_loss:
@@ -277,6 +350,8 @@ def test_model(
     progress_label: Optional[str] = "Test",
     target_names: Optional[list[str]] = None,
     accuracy_tolerance_percent: float = 10.0,
+    target_mean: Optional[Tensor] = None,
+    target_std: Optional[Tensor] = None,
 ) -> dict[str, Any]:
     """Evaluate regression metrics with bounded memory, one batch at a time.
 
@@ -313,7 +388,12 @@ def test_model(
             if not isinstance(raw_batch, Mapping):
                 raise TypeError("Each data-loader batch must be a mapping.")
             predictions, targets = _predict_batch(
-                model, raw_batch, selected_device, target_key
+                model,
+                raw_batch,
+                selected_device,
+                target_key,
+                target_mean,
+                target_std,
             )
             loss = criterion(predictions, targets)
             if not isinstance(loss, Tensor) or loss.numel() != 1:
@@ -324,6 +404,10 @@ def test_model(
             if predictions_cpu.ndim == 1:
                 predictions_cpu = predictions_cpu.unsqueeze(1)
                 targets_cpu = targets_cpu.unsqueeze(1)
+            predictions_cpu = _restore_target_scale(
+                predictions_cpu, target_mean, target_std
+            )
+            targets_cpu = _restore_target_scale(targets_cpu, target_mean, target_std)
             if not torch.isfinite(predictions_cpu).all() or not torch.isfinite(targets_cpu).all():
                 raise ValueError("Predictions and targets must contain only finite values.")
 

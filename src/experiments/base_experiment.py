@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from torch import nn
+from torch import Tensor, nn
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader, Dataset, Sampler
 
@@ -20,6 +20,8 @@ class FoldSetup:
 	validation_loader: Iterable[Mapping[str, Any]]
 	optimizer: Optimizer
 	model_config: Mapping[str, Any]
+	target_mean: Tensor
+	target_std: Tensor
 
 
 class BaseExperiment(ABC):
@@ -86,6 +88,8 @@ class BaseExperiment(ABC):
 		...
 
 	def run(self) -> None:
+		# Each fold is one train/validation split. We train a fresh model on
+		# that split, then evaluate it before moving to the next fold.
 		for fold_index, (train_ids, validation_ids) in enumerate(
 			self._get_splits(), start=1
 		):
@@ -93,6 +97,7 @@ class BaseExperiment(ABC):
 			self._run_fold(fold_index, train_ids, validation_ids, run_label)
 
 	def _run_label(self, fold_index: int) -> str:
+		# Single split = no cross-validation; otherwise this is the current fold.
 		if self.folds is None:
 			return "Single split"
 		return f"Fold {fold_index}/{self.folds}"
@@ -112,6 +117,7 @@ class BaseExperiment(ABC):
 		validation_ids: list[str],
 		run_label: str,
 	) -> None:
+		# A fold owns one training set, one validation set, and one model run.
 		print(
 			f"Training {run_label} with {len(train_ids)} train IDs and "
 			f"{len(validation_ids)} validation IDs."
@@ -138,6 +144,8 @@ class BaseExperiment(ABC):
 			model_config=fold.model_config,
 			progress_label=run_label,
 			device=self.device,
+			target_mean=fold.target_mean,
+			target_std=fold.target_std,
 		)
 		self._evaluate_and_save_metrics(
 			fold.model,
@@ -145,6 +153,8 @@ class BaseExperiment(ABC):
 			fold.model_config,
 			checkpoint_dir,
 			run_label,
+			fold.target_mean,
+			fold.target_std,
 		)
 
 	def _evaluate_and_save_metrics(
@@ -154,6 +164,8 @@ class BaseExperiment(ABC):
 		model_config: Mapping[str, Any],
 		checkpoint_dir: Path,
 		run_label: str,
+		target_mean: Tensor,
+		target_std: Tensor,
 	) -> None:
 		model.load_checkpoint(
 			checkpoint_path,
@@ -168,10 +180,13 @@ class BaseExperiment(ABC):
 			progress_label=f"{run_label} test",
 			target_names=self.target_names,
 			accuracy_tolerance_percent=self.accuracy_tolerance_percent,
+			target_mean=target_mean,
+			target_std=target_std,
 		)
 		metrics_payload = {
 			"run_label": run_label,
 			"model_config": dict(model_config),
+			"loss_space": "standardized targets",
 			"accuracy_tolerance_percent": self.accuracy_tolerance_percent,
 			"test_dish_count": self.test_dish_count,
 			**metrics,
@@ -182,7 +197,7 @@ class BaseExperiment(ABC):
 			metrics_file.write("\n")
 
 		print(f"Saved test metrics to {metrics_path}")
-		print(f"{run_label} test MSE: {metrics['loss']:.4f}")
+		print(f"{run_label} test standardized MSE: {metrics['loss']:.4f}")
 		print(f"{run_label} test MAE: {metrics['mae']}")
 		print(f"{run_label} test MAPE (%): {metrics['mape_percent']}")
 		print(f"{run_label} test R2: {metrics['r2']}")
