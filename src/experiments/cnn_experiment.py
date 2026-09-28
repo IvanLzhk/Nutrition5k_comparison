@@ -25,6 +25,7 @@ class CNNExperiment(BaseExperiment):
 	TARGET_NAMES = ["calories", "mass_g", "fat_g", "carbs_g", "protein_g"]
 
 	def __init__(self, args: Any) -> None:
+		self.args = args
 		self.metadata_path = Path(METADATA_PATH)
 		self.imagery_root = Path(IMAGERY_ROOT)
 		self.transform = T.Compose(

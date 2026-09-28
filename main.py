@@ -21,13 +21,13 @@ def main() -> None:
 	parser.add_argument(
 		"--num-layers",
 		type=int,
-		default=3,
+		default=4,
 		help="Number of convolutional layers.",
 	)
 	parser.add_argument(
 		"--width",
 		type=int,
-		default=16,
+		default=64,
 		help="Channels in the first layer; channels double at each layer.",
 	)
 	CNNExperiment(parser.parse_args()).run()

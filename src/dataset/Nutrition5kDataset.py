@@ -121,7 +121,7 @@ class Nutrition5kDataset(Dataset):
 
         # side_angles
         side_files = self._get_image_paths(entry["side_path"])
-        side_imgs = [self._load_image(p) for p in side_files]
+        side_imgs = [torch.flip(self._load_image(p), dims=[1]) for p in side_files]
         side_tensor = (
             torch.stack(side_imgs, dim=0)
             if side_imgs
