@@ -1,53 +1,36 @@
-import argparse
 from pathlib import Path
 
-from setup import BATCH_SIZE, NUM_WORKERS
 from src.experiments.cnn_experiment import CNNExperiment
 
 
+# Experiment settings
+EPOCHS = 50
+FOLDS = None
+BATCH_SIZE = 128
+NUM_WORKERS = 8
+LEARNING_RATE = 1e-3
+ACCURACY_TOLERANCE_PERCENT = 10.0
+IMAGE_SIZE = 128
+CACHE_DIR = Path("data/cache/nutrition5k")
+AUGMENTATION_ENABLED = True
+NUM_LAYERS = 4
+WIDTH = 64
+
+
 def main() -> None:
-	parser = argparse.ArgumentParser(description="Train the simple Nutrition5k CNN.")
-	parser.add_argument("--epochs", type=int, default=50)
-	parser.add_argument(
-		"--folds",
-		type=int,
-		default=None,
-		help="Run full k-fold cross-validation; omit for one 80/20 train/validation split.",
-	)
-	parser.add_argument("--batch-size", type=int, default=BATCH_SIZE)
-	parser.add_argument("--num-workers", type=int, default=NUM_WORKERS)
-	parser.add_argument("--learning-rate", type=float, default=1e-3)
-	parser.add_argument("--accuracy-tolerance-percent", type=float, default=10.0)
-	parser.add_argument("--image-size", type=int, default=128)
-	parser.add_argument(
-		"--cache-dir",
-		type=Path,
-		default=Path("data/cache/nutrition5k"),
-		help="Directory for lazily cached preprocessed images.",
-	)
-	parser.add_argument(
-		"--no-cache",
-		action="store_true",
-		help="Disable the preprocessed image cache.",
-	)
-	parser.add_argument(
-		"--no-augmentation",
-		action="store_true",
-		help="Disable random training-image augmentation.",
-	)
-	parser.add_argument(
-		"--num-layers",
-		type=int,
-		default=4,
-		help="Number of convolutional layers.",
-	)
-	parser.add_argument(
-		"--width",
-		type=int,
-		default=64,
-		help="Channels in the first layer; channels double at each layer.",
-	)
-	CNNExperiment(parser.parse_args()).run()
+	CNNExperiment(
+		epochs=EPOCHS,
+		folds=FOLDS,
+		batch_size=BATCH_SIZE,
+		num_workers=NUM_WORKERS,
+		learning_rate=LEARNING_RATE,
+		accuracy_tolerance_percent=ACCURACY_TOLERANCE_PERCENT,
+		image_size=IMAGE_SIZE,
+		cache_dir=CACHE_DIR,
+		augmentation_enabled=AUGMENTATION_ENABLED,
+		num_layers=NUM_LAYERS,
+		width=WIDTH,
+	).run()
 
 
 if __name__ == "__main__":

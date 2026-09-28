@@ -25,8 +25,11 @@ class FoldSetup:
 class BaseExperiment(ABC):
 	def __init__(
 		self,
-		args: Any,
 		*,
+		epochs: int,
+		folds: int | None,
+		accuracy_tolerance_percent: float,
+		augmentation_enabled: bool,
 		checkpoint_root: Path,
 		model_name: str,
 		test_loader: Iterable[Mapping[str, Any]],
@@ -35,9 +38,11 @@ class BaseExperiment(ABC):
 		criterion: nn.Module,
 		device: str,
 	) -> None:
-		self.args = args
+		self.epochs = epochs
+		self.folds = folds
+		self.accuracy_tolerance_percent = accuracy_tolerance_percent
 		self.train_augmentation = self._build_train_augmentation(
-			enabled=not getattr(args, "no_augmentation", False)
+			enabled=augmentation_enabled
 		)
 		self.checkpoint_root = checkpoint_root
 		self.model_name = model_name
@@ -84,9 +89,17 @@ class BaseExperiment(ABC):
 			self._run_fold(fold_index, train_ids, validation_ids, run_label)
 
 	def _run_label(self, fold_index: int) -> str:
-		if self.args.folds is None:
+		if self.folds is None:
 			return "Single split"
-		return f"Fold {fold_index}/{self.args.folds}"
+		return f"Fold {fold_index}/{self.folds}"
+
+	def _checkpoint_dir_for_fold(self, fold_index: int) -> Path:
+		checkpoint_name = (
+			f"fold_{fold_index}"
+			if self.folds is not None
+			else "single_split"
+		)
+		return self.checkpoint_root / checkpoint_name
 
 	def _run_fold(
 		self,
@@ -100,12 +113,7 @@ class BaseExperiment(ABC):
 			f"{len(validation_ids)} validation IDs."
 		)
 		fold = self._create_fold(train_ids, validation_ids, run_label)
-		checkpoint_name = (
-			f"fold_{fold_index}"
-			if self.args.folds is not None
-			else "single_split"
-		)
-		checkpoint_dir = self.checkpoint_root / checkpoint_name
+		checkpoint_dir = self._checkpoint_dir_for_fold(fold_index)
 		checkpoint_dir.mkdir(parents=True, exist_ok=True)
 		latest_checkpoint_path = checkpoint_dir / f"{self.model_name}_latest.pt"
 		best_checkpoint_path = checkpoint_dir / f"{self.model_name}_best.pt"
@@ -119,7 +127,7 @@ class BaseExperiment(ABC):
 			train_loader=fold.train_loader,
 			optimizer=fold.optimizer,
 			criterion=self.criterion,
-			epochs=self.args.epochs,
+			epochs=self.epochs,
 			validation_loader=fold.validation_loader,
 			last_checkpoint_path=latest_checkpoint_path,
 			best_checkpoint_path=best_checkpoint_path,
@@ -155,12 +163,12 @@ class BaseExperiment(ABC):
 			device=self.device,
 			progress_label=f"{run_label} test",
 			target_names=self.target_names,
-			accuracy_tolerance_percent=self.args.accuracy_tolerance_percent,
+			accuracy_tolerance_percent=self.accuracy_tolerance_percent,
 		)
 		metrics_payload = {
 			"run_label": run_label,
 			"model_config": dict(model_config),
-			"accuracy_tolerance_percent": self.args.accuracy_tolerance_percent,
+			"accuracy_tolerance_percent": self.accuracy_tolerance_percent,
 			"test_dish_count": self.test_dish_count,
 			**metrics,
 		}
@@ -175,7 +183,7 @@ class BaseExperiment(ABC):
 		print(f"{run_label} test MAPE (%): {metrics['mape_percent']}")
 		print(f"{run_label} test R2: {metrics['r2']}")
 		print(
-			f"{run_label} test Acc@{self.args.accuracy_tolerance_percent:g}% (%): "
+			f"{run_label} test Acc@{self.accuracy_tolerance_percent:g}% (%): "
 			f"{metrics['acc_at_k_percent']['values_percent']}"
 		)
 		print(

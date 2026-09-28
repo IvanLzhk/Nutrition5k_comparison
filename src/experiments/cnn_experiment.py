@@ -1,6 +1,5 @@
 import datetime
 from pathlib import Path
-from typing import Any, Optional
 
 import torch
 from torch import nn
@@ -8,9 +7,11 @@ from torch.utils.data import DataLoader, WeightedRandomSampler
 import torchvision.transforms as T
 
 from setup import (
+	BATCH_SIZE,
 	IMAGERY_ROOT,
 	METADATA_PATH,
 	MODEL_CHECKPOINT_DIR,
+	NUM_WORKERS,
 	TEST_IDS_PATH,
 	TRAIN_IDS_PATH,
 )
@@ -24,17 +25,32 @@ from .base_experiment import BaseExperiment, FoldSetup
 class CNNExperiment(BaseExperiment):
 	TARGET_NAMES = ["calories", "mass_g", "fat_g", "carbs_g", "protein_g"]
 
-	def __init__(self, args: Any) -> None:
-		self.args = args
-		self.cache_dir = (
-			None
-			if getattr(args, "no_cache", False)
-			else Path(getattr(args, "cache_dir", "data/cache/nutrition5k"))
-		)
+	def __init__(
+		self,
+		*,
+		epochs: int = 50,
+		folds: int | None = None,
+		batch_size: int = BATCH_SIZE,
+		num_workers: int = NUM_WORKERS,
+		learning_rate: float = 1e-3,
+		accuracy_tolerance_percent: float = 10.0,
+		image_size: int = 128,
+		cache_dir: Path | None = Path("data/cache/nutrition5k"),
+		augmentation_enabled: bool = True,
+		num_layers: int = 4,
+		width: int = 64,
+	) -> None:
+		self.batch_size = batch_size
+		self.num_workers = num_workers
+		self.learning_rate = learning_rate
+		self.image_size = image_size
+		self.num_layers = num_layers
+		self.width = width
+		self.cache_dir = cache_dir
 		self.metadata_path = Path(METADATA_PATH)
 		self.imagery_root = Path(IMAGERY_ROOT)
 		self.transform = T.Compose(
-			[T.Resize((args.image_size, args.image_size)), T.ToTensor()]
+			[T.Resize((image_size, image_size)), T.ToTensor()]
 		)
 		self.test_ids = self._read_ids(Path(TEST_IDS_PATH))
 		test_dataset = self._create_dataset(self.test_ids)
@@ -47,7 +63,10 @@ class CNNExperiment(BaseExperiment):
 			/ datetime.datetime.now().strftime("%Y.%m.%d_%H-%M-%S")
 		)
 		super().__init__(
-			args,
+			epochs=epochs,
+			folds=folds,
+			accuracy_tolerance_percent=accuracy_tolerance_percent,
+			augmentation_enabled=augmentation_enabled,
 			checkpoint_root=checkpoint_root,
 			model_name="simple_cnn",
 			test_loader=test_loader,
@@ -81,25 +100,25 @@ class CNNExperiment(BaseExperiment):
 	def _create_loader(
 		self,
 		dataset: Nutrition5kDataset,
-		sampler: Optional[WeightedRandomSampler] = None,
+		sampler: WeightedRandomSampler | None = None,
 	) -> DataLoader:
 		return DataLoader(
 			dataset,
-			batch_size=self.args.batch_size,
-			num_workers=self.args.num_workers,
+			batch_size=self.batch_size,
+			num_workers=self.num_workers,
 			pin_memory=True,
 			sampler=sampler,
 		)
 
 	def _get_splits(self) -> list[tuple[list[str], list[str]]]:
-		n_splits = self.args.folds if self.args.folds is not None else 5
+		n_splits = self.folds if self.folds is not None else 5
 		splits = get_kfold_splits(
 			n_splits=n_splits,
 			shuffle=True,
 			random_state=42,
 			train_ids_path=Path(TRAIN_IDS_PATH),
 		)
-		if self.args.folds is None:
+		if self.folds is None:
 			return [next(splits)]
 		return list(splits)
 
@@ -125,22 +144,22 @@ class CNNExperiment(BaseExperiment):
 		train_loader = self._create_loader(train_dataset, sampler=train_sampler)
 		validation_loader = self._create_loader(validation_dataset)
 		print(
-			f"Initializing SimpleCNN with {self.args.num_layers} layers "
-			f"and width {self.args.width}..."
+			f"Initializing SimpleCNN with {self.num_layers} layers "
+			f"and width {self.width}..."
 		)
 		model = SimpleCNN(
 			output_features=5,
-			num_layers=self.args.num_layers,
-			width=self.args.width,
+			num_layers=self.num_layers,
+			width=self.width,
 		)
 		optimizer = torch.optim.Adam(
-			model.parameters(), lr=self.args.learning_rate
+			model.parameters(), lr=self.learning_rate
 		)
 		model_config = {
 			"output_features": 5,
-			"image_size": self.args.image_size,
-			"num_layers": self.args.num_layers,
-			"width": self.args.width,
+			"image_size": self.image_size,
+			"num_layers": self.num_layers,
+			"width": self.width,
 		}
 		return FoldSetup(
 			model=model,
