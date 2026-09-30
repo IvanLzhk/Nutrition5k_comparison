@@ -18,11 +18,11 @@ def build_train_augmentation() -> T.Compose:
 # Experiment settings
 EPOCHS = 50
 FOLDS = None
-BATCH_SIZE = 128
+BATCH_SIZE = 32
 NUM_WORKERS = 8
 LEARNING_RATE = 1e-3
 ACCURACY_TOLERANCE_PERCENT = 10.0
-IMAGE_SIZE = 128
+IMAGE_SIZE = 384#244
 CACHE_DIR = Path("data/cache/nutrition5k")
 AUGMENTATION_FACTORY = build_train_augmentation
 NUM_LAYERS = 4
@@ -46,4 +46,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-	main()
+	main() #TODO: Check if normalisation of target inside fold even needed

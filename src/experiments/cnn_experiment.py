@@ -37,7 +37,7 @@ class CNNExperiment(BaseExperiment):
 		num_workers: int = NUM_WORKERS,
 		learning_rate: float = 1e-3,
 		accuracy_tolerance_percent: float = 10.0,
-		image_size: int = 128,
+		image_size: int = 384,
 		cache_dir: Path | None = Path("data/cache/nutrition5k"),
 		num_layers: int = 4,
 		width: int = 64,

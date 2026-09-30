@@ -215,6 +215,26 @@ class TrainModelTests(unittest.TestCase):
             )
         )
 
+    def test_stop_training_file_stops_before_next_epoch(self):
+        loader = DataLoader(RegressionDataset(), batch_size=4)
+        model = LinearRegressionModel()
+        output = io.StringIO()
+
+        with patch("src.training.trainer.os.path.exists", return_value=True), patch(
+            "src.training.trainer.sys.stdout", output
+        ):
+            history = train_model(
+                model=model,
+                train_loader=loader,
+                optimizer=torch.optim.SGD(model.parameters(), lr=0.01),
+                criterion=nn.MSELoss(),
+                epochs=3,
+                device="cpu",
+            )
+
+        self.assertEqual(history, {"train_loss": []})
+        self.assertIn("Stop training file detected. Exiting training loop.", output.getvalue())
+
     def test_training_reports_batch_progress(self):
         loader = DataLoader(RegressionDataset(), batch_size=4)
         model = LinearRegressionModel()

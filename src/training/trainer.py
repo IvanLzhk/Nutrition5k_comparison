@@ -1,4 +1,5 @@
 from collections.abc import Callable, Iterable, Mapping
+import os
 from pathlib import Path
 import sys
 import time
@@ -276,6 +277,9 @@ def train_model(
         history.setdefault("val_loss", [])
 
     for epoch in range(start_epoch + 1, start_epoch + epochs + 1):
+        if os.path.exists("./stop_training.txt"):
+            print("Stop training file detected. Exiting training loop.")
+            break
         epoch_label = f"{progress_label}, " if progress_label else ""
         epoch_label += f"epoch {epoch}/{start_epoch + epochs}"
         history["train_loss"].append(
