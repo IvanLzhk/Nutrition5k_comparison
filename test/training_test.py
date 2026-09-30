@@ -126,6 +126,33 @@ class TrainModelTests(unittest.TestCase):
         self.assertAlmostEqual(metrics["r2"]["first"], 0.0)
         self.assertAlmostEqual(metrics["r2"]["second"], 0.0)
 
+    def test_standardized_zero_targets_are_excluded_from_percentage_metrics(self):
+        class ZeroModel(BaseModel):
+            def forward(self, batch):
+                return torch.zeros_like(batch["features"])
+
+        samples = [
+            {"features": torch.zeros(2), "targets": torch.tensor([0.0, 1.0])},
+            {"features": torch.zeros(2), "targets": torch.tensor([1.0, 1.0])},
+        ]
+        loader = DataLoader(samples, batch_size=2)
+
+        metrics = test_model(
+            ZeroModel(),
+            loader,
+            nn.MSELoss(),
+            device="cpu",
+            progress_label=None,
+            target_names=["first", "second"],
+            target_mean=torch.tensor([0.5, 1.0]),
+            target_std=torch.tensor([0.5, 1.0]),
+        )
+
+        self.assertEqual(metrics["mape_percent"], {"first": 50.0, "second": 0.0})
+        self.assertEqual(
+            metrics["percentage_metric_sample_count"], {"first": 1, "second": 2}
+        )
+
     def test_base_model_checkpoint_restores_weights_optimizer_and_progress(self):
         model = LinearRegressionModel()
         optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
@@ -215,7 +242,7 @@ class TrainModelTests(unittest.TestCase):
             )
         )
 
-    def test_stop_training_file_stops_before_next_epoch(self):
+    def test_stop_training_file_stops_after_completed_epoch(self):
         loader = DataLoader(RegressionDataset(), batch_size=4)
         model = LinearRegressionModel()
         output = io.StringIO()
@@ -232,8 +259,11 @@ class TrainModelTests(unittest.TestCase):
                 device="cpu",
             )
 
-        self.assertEqual(history, {"train_loss": []})
-        self.assertIn("Stop training file detected. Exiting training loop.", output.getvalue())
+        self.assertEqual(len(history["train_loss"]), 1)
+        self.assertIn(
+            "Stop training file detected after validation. Exiting training loop.",
+            output.getvalue(),
+        )
 
     def test_training_reports_batch_progress(self):
         loader = DataLoader(RegressionDataset(), batch_size=4)

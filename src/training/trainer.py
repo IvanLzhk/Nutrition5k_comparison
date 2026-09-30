@@ -272,14 +272,12 @@ def train_model(
         best_epoch = progress["best_epoch"]
         if not isinstance(history, dict) or not isinstance(history.get("train_loss"), list):
             raise ValueError("Checkpoint history must include a train_loss list.")
+        print(f"Resuming training from {resume_from} at epoch {start_epoch + 1}.")
 
     if validation_loader is not None:
         history.setdefault("val_loss", [])
 
     for epoch in range(start_epoch + 1, start_epoch + epochs + 1):
-        if os.path.exists("./stop_training.txt"):
-            print("Stop training file detected. Exiting training loop.")
-            break
         epoch_label = f"{progress_label}, " if progress_label else ""
         epoch_label += f"epoch {epoch}/{start_epoch + epochs}"
         history["train_loss"].append(
@@ -342,6 +340,10 @@ def train_model(
             f"elapsed={elapsed}",
             flush=True,
         )
+        if os.path.exists("./stop_training.txt"):
+            print("Stop training file detected after validation. Exiting training loop.")
+            Path("./stop_training.txt").unlink(missing_ok=True)
+            break
 
     return history
 
@@ -399,15 +401,20 @@ def test_model(
                 target_mean,
                 target_std,
             )
+            raw_targets = raw_batch[target_key]
+            if not isinstance(raw_targets, Tensor):
+                raise TypeError(f"Batch field {target_key!r} must be a tensor.")
             loss = criterion(predictions, targets)
             if not isinstance(loss, Tensor) or loss.numel() != 1:
                 raise ValueError("The criterion must return a scalar tensor.")
 
             predictions_cpu = predictions.detach().to(device="cpu", dtype=torch.float64)
             targets_cpu = targets.detach().to(device="cpu", dtype=torch.float64)
+            raw_targets_cpu = raw_targets.detach().to(device="cpu", dtype=torch.float64)
             if predictions_cpu.ndim == 1:
                 predictions_cpu = predictions_cpu.unsqueeze(1)
                 targets_cpu = targets_cpu.unsqueeze(1)
+                raw_targets_cpu = raw_targets_cpu.unsqueeze(1)
             predictions_cpu = _restore_target_scale(
                 predictions_cpu, target_mean, target_std
             )
@@ -433,7 +440,7 @@ def test_model(
 
             errors = predictions_cpu - targets_cpu
             absolute_errors = errors.abs()
-            nonzero_targets = targets_cpu != 0
+            nonzero_targets = raw_targets_cpu != 0
             relative_errors = torch.zeros_like(absolute_errors)
             relative_errors[nonzero_targets] = (
                 absolute_errors[nonzero_targets] / targets_cpu.abs()[nonzero_targets]

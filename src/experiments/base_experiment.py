@@ -3,6 +3,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 import json
 from pathlib import Path
+import shutil
 from typing import Any
 
 from torch import Tensor, nn
@@ -41,6 +42,7 @@ class BaseExperiment(ABC):
 		target_names: list[str],
 		criterion: nn.Module,
 		device: str,
+		resume_from: Path | None = None,
 	) -> None:
 		self.epochs = epochs
 		self.folds = folds
@@ -57,6 +59,7 @@ class BaseExperiment(ABC):
 		self.target_names = target_names
 		self.criterion = criterion
 		self.device = device
+		self.resume_from = resume_from
 
 	def _create_loader(
 		self,
@@ -144,12 +147,36 @@ class BaseExperiment(ABC):
 			model_config=fold.model_config,
 			progress_label=run_label,
 			device=self.device,
+			resume_from=self.resume_from,
 			target_mean=fold.target_mean,
 			target_std=fold.target_std,
 		)
+		evaluation_checkpoint_path = best_checkpoint_path
+		if not (
+			evaluation_checkpoint_path.is_file()
+			and evaluation_checkpoint_path.with_suffix(".json").is_file()
+		):
+			if self.resume_from is None:
+				raise FileNotFoundError(
+					f"Best checkpoint was not created: {best_checkpoint_path}"
+				)
+			resume_checkpoint_path = Path(self.resume_from)
+			resume_metadata_path = resume_checkpoint_path.with_suffix(".json")
+			if not resume_checkpoint_path.is_file() or not resume_metadata_path.is_file():
+				raise FileNotFoundError(
+					f"Resume checkpoint pair was not found: {resume_checkpoint_path}"
+				)
+			print(
+				"No new best checkpoint was created; copying the selected "
+				f"resume checkpoint {self.resume_from} into {checkpoint_dir}."
+			)
+			shutil.copy2(resume_checkpoint_path, best_checkpoint_path)
+			shutil.copy2(
+				resume_metadata_path, best_checkpoint_path.with_suffix(".json")
+			)
 		self._evaluate_and_save_metrics(
 			fold.model,
-			best_checkpoint_path,
+			evaluation_checkpoint_path,
 			fold.model_config,
 			checkpoint_dir,
 			run_label,

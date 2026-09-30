@@ -41,6 +41,7 @@ class CNNExperiment(BaseExperiment):
 		cache_dir: Path | None = Path("data/cache/nutrition5k"),
 		num_layers: int = 4,
 		width: int = 64,
+		resume_from: Path | None = None,
 	) -> None:
 		self.learning_rate = learning_rate
 		self.image_size = image_size
@@ -75,6 +76,7 @@ class CNNExperiment(BaseExperiment):
 			target_names=self.TARGET_NAMES,
 			criterion=nn.MSELoss(),
 			device="cuda",
+			resume_from=resume_from,
 		)
 
 	@staticmethod
