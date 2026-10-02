@@ -12,9 +12,19 @@ from torch import Tensor, nn
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
 from torch.utils.data import DataLoader, Dataset, Sampler
+import torchvision.transforms as T
 
+from setup import (
+	BATCH_SIZE,
+	IMAGERY_ROOT,
+	METADATA_PATH,
+	NUM_WORKERS,
+	TEST_IDS_PATH,
+	TRAIN_IDS_PATH,
+)
+from src.dataset.Nutrition5kDataset import Nutrition5kDataset
 from src.models import BaseModel
-from src.training import test_model, train_model
+from src.training import get_kfold_splits, test_model, train_model
 
 
 @dataclass
@@ -37,23 +47,26 @@ class BaseExperiment(ABC):
 		folds: int | None,
 		accuracy_tolerance_percent: float,
 		augmentation_factory: Callable[[], Any] | None,
-		batch_size: int,
-		num_workers: int,
 		checkpoint_root: Path,
 		model_name: str,
-		test_dataset: Dataset,
-		test_dish_count: int,
 		target_names: list[str],
 		criterion: nn.Module,
 		device: str,
+		batch_size: int = BATCH_SIZE,
+		num_workers: int = NUM_WORKERS,
+		prefetch_factor: int = 1,
+		learning_rate: float = 1e-3,
+		image_size: int = 384,
+		cache_dir: Path | None = Path("data/cache/nutrition5k"),
 		collate_fn: Callable | None = None,
 		seed: int = 42,
 		early_stopping_patience: int | None = None,
 		gradient_clip_norm: float | None = None,
 		use_amp: bool = False,
 		resume_from: Path | None = None,
-		prefetch_factor: int = 1,
 	) -> None:
+		if seed < 0:
+			raise ValueError("seed must be non-negative.")
 		self.epochs = epochs
 		self.folds = folds
 		self.accuracy_tolerance_percent = accuracy_tolerance_percent
@@ -65,9 +78,40 @@ class BaseExperiment(ABC):
 		self.train_augmentation = (
 			augmentation_factory() if augmentation_factory is not None else None
 		)
+		self.learning_rate = learning_rate
+		self.image_size = image_size
+		self.cache_dir = cache_dir
+		self.metadata_path = Path(METADATA_PATH)
+		self.imagery_root = Path(IMAGERY_ROOT)
+		self.transform = T.Compose(
+			[
+				T.Resize((image_size, image_size)),
+				T.ToTensor(),
+			]
+		)
+		self.post_transform = T.Normalize(
+			[0.485, 0.456, 0.406],
+			[0.229, 0.224, 0.225],
+		)
+		self.test_ids = self._read_ids(Path(TEST_IDS_PATH))
+		self.train_ids = self._read_ids(Path(TRAIN_IDS_PATH))
+		self._validate_split_ids()
+		torch.manual_seed(seed)
+		random.seed(seed)
+		if torch.cuda.is_available():
+			torch.cuda.manual_seed_all(seed)
+			torch.backends.cudnn.deterministic = True
+			torch.backends.cudnn.benchmark = False
 		self.checkpoint_root = checkpoint_root
 		self.model_name = model_name
-		self.test_dish_count = test_dish_count
+		test_dataset = self._create_dataset(self.test_ids)
+		if not test_dataset:
+			raise ValueError("The configured test IDs produced an empty test dataset.")
+		if {entry["dish_id"] for entry in test_dataset.entries} != set(self.test_ids):
+			raise ValueError(
+				"Configured test IDs do not match usable dataset entries."
+			)
+		self.test_dish_count = len(self.test_ids)
 		self.target_names = target_names
 		self.criterion = criterion
 		self.device = device
@@ -80,6 +124,38 @@ class BaseExperiment(ABC):
 		self.loader_generator.manual_seed(seed)
 		self.resume_from = resume_from
 		self.test_loader = self._create_loader(test_dataset)
+
+	@staticmethod
+	def _read_ids(path: Path) -> list[str]:
+		ids = [
+			line.strip()
+			for line in path.read_text(encoding="utf-8-sig").splitlines()
+			if line.strip()
+		]
+		if len(ids) != len(set(ids)):
+			raise ValueError(f"Duplicate dish IDs found in {path}.")
+		return ids
+
+	def _validate_split_ids(self) -> None:
+		overlap = set(self.train_ids) & set(self.test_ids)
+		if overlap:
+			raise ValueError(
+				f"Train/test dish ID overlap detected: {sorted(overlap)[:5]}"
+			)
+
+	def _create_dataset(
+		self, dish_ids: list[str], *, training: bool = False
+	) -> Nutrition5kDataset:
+		return Nutrition5kDataset(
+			str(self.metadata_path),
+			str(self.imagery_root),
+			transform=self.transform,
+			dish_ids=dish_ids,
+			image_level=False,
+			cache_dir=str(self.cache_dir) if self.cache_dir is not None else None,
+			augmentation=self.train_augmentation if training else None,
+			post_transform=self.post_transform,
+		)
 
 	def _create_loader(
 		self,
@@ -108,10 +184,18 @@ class BaseExperiment(ABC):
 		worker_seed = torch.initial_seed() % (2**32)
 		random.seed(worker_seed)
 
-	@abstractmethod
 	def _get_splits(self) -> Iterable[tuple[list[str], list[str]]]:
 		"""Return training and validation IDs for each fold."""
-		...
+		n_splits = self.folds if self.folds is not None else 5
+		splits = get_kfold_splits(
+			n_splits=n_splits,
+			shuffle=True,
+			random_state=42,
+			train_ids_path=Path(TRAIN_IDS_PATH),
+		)
+		if self.folds is None:
+			return [next(splits)]
+		return list(splits)
 
 	@abstractmethod
 	def _create_fold(
