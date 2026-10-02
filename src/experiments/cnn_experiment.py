@@ -17,7 +17,10 @@ from setup import (
 	TEST_IDS_PATH,
 	TRAIN_IDS_PATH,
 )
-from src.dataset.Nutrition5kDataset import Nutrition5kDataset
+from src.dataset.Nutrition5kDataset import (
+	Nutrition5kDataset,
+	collate_nutrition5k,
+)
 from src.models import SimpleCNN
 from src.training import get_kfold_splits
 
@@ -76,6 +79,7 @@ class CNNExperiment(BaseExperiment):
 			target_names=self.TARGET_NAMES,
 			criterion=nn.MSELoss(),
 			device="cuda",
+			collate_fn=collate_nutrition5k,
 			resume_from=resume_from,
 		)
 
@@ -95,7 +99,7 @@ class CNNExperiment(BaseExperiment):
 			str(self.imagery_root),
 			transform=self.transform,
 			dish_ids=dish_ids,
-			image_level=True,
+			image_level=False,
 			cache_dir=str(self.cache_dir) if self.cache_dir is not None else None,
 			augmentation=self.train_augmentation if training else None,
 		)
@@ -161,6 +165,7 @@ class CNNExperiment(BaseExperiment):
 			"image_size": self.image_size,
 			"num_layers": self.num_layers,
 			"width": self.width,
+			"uses_side_views": True,
 			"target_mean": target_mean.tolist(),
 			"target_std": target_std.tolist(),
 		}

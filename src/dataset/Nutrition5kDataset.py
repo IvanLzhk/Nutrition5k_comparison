@@ -88,10 +88,13 @@ class Nutrition5kDataset(Dataset):
                 )
                 self.image_samples.extend(dish_samples)
                 sample_counts[entry["dish_id"]] = len(dish_samples)
-        self.sample_weights = [
-            1.0 / sample_counts[entry["dish_id"]]
-            for entry, _, _ in self.image_samples
-        ]
+        if self.image_level:
+            self.sample_weights = [
+                1.0 / sample_counts[entry["dish_id"]]
+                for entry, _, _ in self.image_samples
+            ]
+        else:
+            self.sample_weights = [1.0] * len(self.entries)
 
     def __len__(self):
         return len(self.image_samples) if self.image_level else len(self.entries)

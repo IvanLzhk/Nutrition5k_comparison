@@ -44,6 +44,7 @@ class BaseExperiment(ABC):
 		target_names: list[str],
 		criterion: nn.Module,
 		device: str,
+		collate_fn: Callable | None = None,
 		resume_from: Path | None = None,
 	) -> None:
 		self.epochs = epochs
@@ -61,6 +62,7 @@ class BaseExperiment(ABC):
 		self.target_names = target_names
 		self.criterion = criterion
 		self.device = device
+		self.collate_fn = collate_fn
 		self.resume_from = resume_from
 
 	def _create_loader(
@@ -75,6 +77,7 @@ class BaseExperiment(ABC):
 			pin_memory=True,
 			persistent_workers=self.num_workers > 0,
 			sampler=sampler,
+			collate_fn=getattr(self, "collate_fn", None),
 		)
 
 	@abstractmethod

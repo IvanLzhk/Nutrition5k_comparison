@@ -205,13 +205,17 @@ class Nutrition5kDatasetTests(unittest.TestCase):
         self.assertIsNone(evaluation_dataset.augmentation)
         self.assertFalse(
             torch.equal(
-                train_dataset[1]["overhead"],
-                evaluation_dataset[1]["overhead"],
+                train_dataset[0]["side_views"][0],
+                evaluation_dataset[0]["side_views"][0],
             )
         )
 
-        batch = next(iter(DataLoader(train_dataset, batch_size=2)))
-        self.assertEqual(batch["overhead"].shape, (2, 3, 4, 4))
+        experiment.batch_size = 2
+        experiment.num_workers = 0
+        experiment.collate_fn = collate_nutrition5k
+        batch = next(iter(experiment._create_loader(train_dataset)))
+        self.assertEqual(batch["overhead"].shape, (1, 3, 4, 4))
+        self.assertEqual(batch["side_views"].shape, (1, 3, 4, 4))
 
     def test_experiment_loader_persists_workers_when_enabled(self):
         experiment = object.__new__(CNNExperiment)
