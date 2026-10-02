@@ -150,8 +150,11 @@ class CNNExperiment(BaseExperiment):
 			num_layers=self.num_layers,
 			width=self.width,
 		)
-		optimizer = torch.optim.Adam(
+		optimizer = torch.optim.AdamW(
 			model.parameters(), lr=self.learning_rate
+		)
+		scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+			optimizer, T_max=self.epochs
 		)
 		model_config = {
 			"output_features": 5,
@@ -166,6 +169,7 @@ class CNNExperiment(BaseExperiment):
 			train_loader=train_loader,
 			validation_loader=validation_loader,
 			optimizer=optimizer,
+			scheduler=scheduler,
 			model_config=model_config,
 			target_mean=target_mean,
 			target_std=target_std,

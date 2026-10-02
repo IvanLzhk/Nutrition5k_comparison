@@ -242,6 +242,56 @@ class TrainModelTests(unittest.TestCase):
             )
         )
 
+    def test_cosine_annealing_scheduler_updates_learning_rate_each_epoch(self):
+        model = LinearRegressionModel()
+        optimizer = torch.optim.AdamW(model.parameters(), lr=0.1)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=4
+        )
+        learning_rates = []
+
+        def fake_run_epoch(
+            model,
+            data_loader,
+            criterion,
+            device,
+            target_key,
+            optimizer=None,
+            progress_label=None,
+            target_mean=None,
+            target_std=None,
+        ):
+            if optimizer is not None:
+                optimizer.step()
+                learning_rates.append(optimizer.param_groups[0]["lr"])
+            return 1.0
+
+        with patch("src.training.trainer._run_epoch", side_effect=fake_run_epoch):
+            train_model(
+                model=model,
+                train_loader=[],
+                optimizer=optimizer,
+                criterion=nn.MSELoss(),
+                epochs=4,
+                device="cpu",
+                scheduler=scheduler,
+            )
+
+        expected_learning_rates = [
+            0.1,
+            0.1 * (1 + torch.cos(torch.tensor(torch.pi / 4))).item() / 2,
+            0.05,
+            0.1 * (1 + torch.cos(torch.tensor(3 * torch.pi / 4))).item() / 2,
+        ]
+        self.assertEqual(len(learning_rates), 4)
+        torch.testing.assert_close(
+            torch.tensor(learning_rates),
+            torch.tensor(expected_learning_rates),
+            rtol=1e-5,
+            atol=1e-6,
+        )
+        self.assertAlmostEqual(optimizer.param_groups[0]["lr"], 0.0, places=7)
+
     def test_stop_training_file_stops_after_completed_epoch(self):
         loader = DataLoader(RegressionDataset(), batch_size=4)
         model = LinearRegressionModel()

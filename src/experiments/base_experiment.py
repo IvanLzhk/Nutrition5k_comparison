@@ -8,6 +8,7 @@ from typing import Any
 
 from torch import Tensor, nn
 from torch.optim import Optimizer
+from torch.optim.lr_scheduler import LRScheduler
 from torch.utils.data import DataLoader, Dataset, Sampler
 
 from src.models import BaseModel
@@ -20,6 +21,7 @@ class FoldSetup:
 	train_loader: Iterable[Mapping[str, Any]]
 	validation_loader: Iterable[Mapping[str, Any]]
 	optimizer: Optimizer
+	scheduler: LRScheduler
 	model_config: Mapping[str, Any]
 	target_mean: Tensor
 	target_std: Tensor
@@ -139,6 +141,7 @@ class BaseExperiment(ABC):
 			model=fold.model,
 			train_loader=fold.train_loader,
 			optimizer=fold.optimizer,
+			scheduler=fold.scheduler,
 			criterion=self.criterion,
 			epochs=self.epochs,
 			validation_loader=fold.validation_loader,

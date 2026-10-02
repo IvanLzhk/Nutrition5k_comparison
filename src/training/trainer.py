@@ -9,6 +9,7 @@ from typing import Any, Optional, Union
 import torch
 from torch import Tensor, nn
 from torch.optim import Optimizer
+from torch.optim.lr_scheduler import LRScheduler
 
 from src.models import BaseModel
 
@@ -230,6 +231,7 @@ def train_model(
     progress_label: Optional[str] = None,
     target_mean: Optional[Tensor] = None,
     target_std: Optional[Tensor] = None,
+    scheduler: Optional[LRScheduler] = None,
 ) -> dict[str, list[float]]:
     """Train a ``BaseModel`` on CUDA by default and return sample-weighted losses.
 
@@ -263,6 +265,7 @@ def train_model(
         progress = model.load_checkpoint(
             resume_from,
             optimizer=optimizer,
+            scheduler=scheduler,
             map_location=selected_device,
             expected_model_config=model_config,
         )
@@ -305,24 +308,32 @@ def train_model(
                 target_std=target_std,
             )
             history["val_loss"].append(val_loss)
+
             if best_val_loss is None or val_loss < best_val_loss:
                 best_val_loss = val_loss
                 best_epoch = epoch
-                if best_checkpoint_path is not None:
-                    model.save_checkpoint(
-                        best_checkpoint_path,
-                        optimizer=optimizer,
-                        epoch=epoch,
-                        history=history,
-                        best_val_loss=best_val_loss,
-                        best_epoch=best_epoch,
-                        model_config=model_config,
-                    )
+
+        if scheduler is not None:
+            scheduler.step()
+
+        if validation_loader is not None and best_epoch == epoch:
+            if best_checkpoint_path is not None:
+                model.save_checkpoint(
+                    best_checkpoint_path,
+                    optimizer=optimizer,
+                    scheduler=scheduler,
+                    epoch=epoch,
+                    history=history,
+                    best_val_loss=best_val_loss,
+                    best_epoch=best_epoch,
+                    model_config=model_config,
+                )
 
         if last_checkpoint_path is not None:
             model.save_checkpoint(
                 last_checkpoint_path,
                 optimizer=optimizer,
+                scheduler=scheduler,
                 epoch=epoch,
                 history=history,
                 best_val_loss=best_val_loss,

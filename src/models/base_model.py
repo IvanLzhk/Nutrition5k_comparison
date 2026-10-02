@@ -7,6 +7,7 @@ from typing import Any, Mapping, Optional, Union
 import torch
 from torch import Tensor, nn
 from torch.optim import Optimizer
+from torch.optim.lr_scheduler import LRScheduler
 
 
 class BaseModel(nn.Module, ABC):
@@ -39,6 +40,7 @@ class BaseModel(nn.Module, ABC):
         path: Union[str, Path],
         *,
         optimizer: Optional[Optimizer] = None,
+        scheduler: Optional[LRScheduler] = None,
         epoch: int = 0,
         history: Optional[Mapping[str, Any]] = None,
         best_val_loss: Optional[float] = None,
@@ -65,6 +67,8 @@ class BaseModel(nn.Module, ABC):
             "model_state_dict": self.state_dict(),
             "optimizer_class": self._checkpoint_class_name(optimizer) if optimizer else None,
             "optimizer_state_dict": optimizer.state_dict() if optimizer else None,
+            "scheduler_class": self._checkpoint_class_name(scheduler) if scheduler else None,
+            "scheduler_state_dict": scheduler.state_dict() if scheduler else None,
         }
         metadata_payload = {
             "format_version": 1,
@@ -116,6 +120,7 @@ class BaseModel(nn.Module, ABC):
         path: Union[str, Path],
         *,
         optimizer: Optional[Optimizer] = None,
+        scheduler: Optional[LRScheduler] = None,
         map_location: Union[str, torch.device] = "cpu",
         expected_model_config: Optional[Mapping[str, Any]] = None,
     ) -> dict[str, Any]:
@@ -151,6 +156,14 @@ class BaseModel(nn.Module, ABC):
                     "Checkpoint optimizer class does not match the provided optimizer."
                 )
             optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        if scheduler is not None:
+            if checkpoint.get("scheduler_state_dict") is None:
+                raise ValueError("Checkpoint does not contain scheduler state.")
+            if checkpoint.get("scheduler_class") != self._checkpoint_class_name(scheduler):
+                raise ValueError(
+                    "Checkpoint scheduler class does not match the provided scheduler."
+                )
+            scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
 
         return {
             "epoch": progress.get("epoch", 0),
