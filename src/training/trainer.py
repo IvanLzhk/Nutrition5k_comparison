@@ -152,6 +152,11 @@ def _compute_batch_loss(
     loss = criterion(predictions, targets)
     if not isinstance(loss, Tensor) or loss.numel() != 1:
         raise ValueError("The criterion must return a scalar tensor.")
+    if not torch.isfinite(loss).all():
+        raise FloatingPointError(
+            "The criterion returned a non-finite loss. "
+            "Check the model outputs, targets, and mixed-precision settings."
+        )
     return loss, targets.shape[0]
 
 
@@ -186,7 +191,15 @@ def _run_epoch(
             if not isinstance(raw_batch, Mapping):
                 raise TypeError("Each data-loader batch must be a mapping.")
             with (
-                torch.autocast(device_type=device.type, enabled=use_amp)
+                torch.autocast(
+                    device_type=device.type,
+                    dtype=(
+                        torch.bfloat16
+                        if device.type == "cuda" and torch.cuda.is_bf16_supported()
+                        else torch.float16
+                    ),
+                    enabled=use_amp,
+                )
                 if use_amp
                 else nullcontext()
             ):
