@@ -322,6 +322,37 @@ class Nutrition5kDatasetTests(unittest.TestCase):
         self.assertEqual(batch["side_views"].shape, (0, 3, 4, 4))
         self.assertEqual(batch["side_dish_indices"].shape, (0,))
 
+    def test_side_image_selection_limits_each_camera_and_total(self):
+        side_dir = self.imagery_root / "side_angles" / "dish-1" / "frames_sampled25"
+        for image_path in side_dir.iterdir():
+            image_path.unlink()
+        for camera in "ABCD":
+            for index in range(15):
+                (side_dir / f"camera_{camera}_frame_{index:03d}.png").touch()
+
+        dataset = self._make_dataset()
+        selected = dataset._get_image_paths(str(side_dir))
+
+        self.assertEqual(len(selected), 40)
+        for camera in "ABCD":
+            self.assertLessEqual(
+                sum(
+                    f"camera_{camera}_" in Path(path).name
+                    for path in selected
+                ),
+                10,
+            )
+        self.assertEqual(selected, dataset._get_image_paths(str(side_dir)))
+
+    def test_side_image_selection_falls_back_to_total_limit(self):
+        side_dir = self.imagery_root / "side_angles" / "dish-1" / "frames_sampled25"
+        for index in range(50):
+            (side_dir / f"frame_{index:03d}.png").touch()
+
+        dataset = self._make_dataset()
+
+        self.assertEqual(len(dataset._get_image_paths(str(side_dir))), 40)
+
     def test_metadata_rejects_duplicate_dish_ids(self):
         duplicate_path = self.root / "duplicate_metadata.csv"
         duplicate_path.write_text(

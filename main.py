@@ -2,6 +2,7 @@ from pathlib import Path
 
 import torchvision.transforms as T
 
+from src.experiments.resnet18_experiment import ResNet18Experiment
 from src.experiments.cnn_experiment import CNNExperiment
 
 
@@ -36,7 +37,7 @@ RESUME_FROM = None# Example: Path("checkpoints/simple_cnn/2026.09.30_22-21-48/si
 
 
 def main() -> None:
-	CNNExperiment(
+	"""CNNExperiment(
 		epochs=EPOCHS,
 		folds=FOLDS,
 		batch_size=BATCH_SIZE,
@@ -49,6 +50,23 @@ def main() -> None:
 		augmentation_factory=AUGMENTATION_FACTORY,
 		num_layers=NUM_LAYERS,
 		width=WIDTH,
+		seed=SEED,
+		early_stopping_patience=EARLY_STOPPING_PATIENCE,
+		gradient_clip_norm=GRADIENT_CLIP_NORM,
+		use_amp=USE_AMP,
+		resume_from=RESUME_FROM,
+	).run()"""
+	ResNet18Experiment(
+		epochs=EPOCHS,
+		folds=FOLDS,
+		batch_size=BATCH_SIZE,
+		num_workers=NUM_WORKERS,
+		prefetch_factor=PREFETCH_FACTOR,
+		learning_rate=LEARNING_RATE,
+		accuracy_tolerance_percent=ACCURACY_TOLERANCE_PERCENT,
+		image_size=IMAGE_SIZE,
+		cache_dir=CACHE_DIR,
+		augmentation_factory=AUGMENTATION_FACTORY,
 		seed=SEED,
 		early_stopping_patience=EARLY_STOPPING_PATIENCE,
 		gradient_clip_norm=GRADIENT_CLIP_NORM,

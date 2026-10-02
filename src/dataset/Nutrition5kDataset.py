@@ -3,6 +3,8 @@ import hashlib
 import json
 import math
 import os
+import random
+import re
 import tempfile
 from pathlib import Path
 from PIL import Image
@@ -13,6 +15,9 @@ import torchvision.transforms as T
 
 class Nutrition5kDataset(Dataset):
     CACHE_VERSION = 3
+    MAX_SIDE_IMAGES_PER_CAMERA = 10
+    MAX_SIDE_IMAGES_TOTAL = 40
+    CAMERA_FILENAME_PATTERN = re.compile(r"^camera_([^_]+)_", re.IGNORECASE)
 
     def __init__(
         self,
@@ -42,6 +47,7 @@ class Nutrition5kDataset(Dataset):
         self.cache_dir = Path(cache_dir) if cache_dir is not None else None
         self.augmentation = augmentation
         self.post_transform = post_transform
+        self._selected_image_paths = {}
 
         self.entries = []
         dish_filter = set(dish_ids) if dish_ids is not None else None
@@ -131,6 +137,8 @@ class Nutrition5kDataset(Dataset):
 
         if not os.path.isdir(dish_folder):
             return []
+        if dish_folder in self._selected_image_paths:
+            return self._selected_image_paths[dish_folder]
 
         frames_dir = os.path.join(dish_folder, "frames_sampled25")
         target_dir = frames_dir if os.path.isdir(frames_dir) else dish_folder
@@ -140,7 +148,45 @@ class Nutrition5kDataset(Dataset):
             for f in sorted(os.listdir(target_dir))
             if f.lower().endswith(valid_exts) and not f.startswith(".")
         ]
+        camera_groups = {}
+        for path in paths:
+            match = self.CAMERA_FILENAME_PATTERN.match(os.path.basename(path))
+            if match is None:
+                camera_groups = {}
+                break
+            camera_groups.setdefault(match.group(1).lower(), []).append(path)
+
+        if camera_groups:
+            paths = [
+                path
+                for camera_paths in camera_groups.values()
+                for path in self._random_sample(
+                    camera_paths, self.MAX_SIDE_IMAGES_PER_CAMERA
+                )
+            ]
+            if len(paths) > self.MAX_SIDE_IMAGES_TOTAL:
+                selected_paths = [
+                    path
+                    for path in self._random_sample(
+                        paths, self.MAX_SIDE_IMAGES_TOTAL
+                    )
+                ]
+                paths = selected_paths
+        elif len(paths) > self.MAX_SIDE_IMAGES_TOTAL:
+            paths = self._random_sample(paths, self.MAX_SIDE_IMAGES_TOTAL)
+
+        if len(paths) > self.MAX_SIDE_IMAGES_TOTAL or camera_groups:
+            paths.sort()
+
+        self._selected_image_paths[dish_folder] = paths
         return paths
+
+    @staticmethod
+    def _random_sample(paths, limit):
+        if len(paths) <= limit:
+            return list(paths)
+        generator = random.Random("|".join(paths))
+        return generator.sample(paths, limit)
 
     def _cache_path(self, path: str, flip_vertical: bool) -> Path | None:
         if self.cache_dir is None:
