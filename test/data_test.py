@@ -298,6 +298,21 @@ class Nutrition5kDatasetTests(unittest.TestCase):
         self.assertEqual(batch["side_views"].shape, (0, 3, 4, 4))
         self.assertEqual(batch["side_dish_indices"].shape, (0,))
 
+    def test_metadata_rejects_duplicate_dish_ids(self):
+        duplicate_path = self.root / "duplicate_metadata.csv"
+        duplicate_path.write_text(
+            "dish-1,100,200,10,20,30\n"
+            "dish-1,101,201,11,21,31\n",
+            encoding="utf-8",
+        )
+
+        with self.assertRaisesRegex(ValueError, "Duplicate dish ID"):
+            Nutrition5kDataset(
+                metadata_path=str(duplicate_path),
+                imagery_root=str(self.imagery_root),
+                transform=T.ToTensor(),
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

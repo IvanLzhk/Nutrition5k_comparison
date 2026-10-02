@@ -1,5 +1,6 @@
 import datetime
 from collections.abc import Callable
+import random
 from pathlib import Path
 from typing import Any
 
@@ -44,8 +45,15 @@ class CNNExperiment(BaseExperiment):
 		cache_dir: Path | None = Path("data/cache/nutrition5k"),
 		num_layers: int = 4,
 		width: int = 64,
+		seed: int = 42,
+		early_stopping_patience: int | None = 8,
+		gradient_clip_norm: float | None = 1.0,
+		use_amp: bool = True,
 		resume_from: Path | None = None,
 	) -> None:
+		if seed < 0:
+			raise ValueError("seed must be non-negative.")
+		self.seed = seed
 		self.learning_rate = learning_rate
 		self.image_size = image_size
 		self.num_layers = num_layers
@@ -54,12 +62,31 @@ class CNNExperiment(BaseExperiment):
 		self.metadata_path = Path(METADATA_PATH)
 		self.imagery_root = Path(IMAGERY_ROOT)
 		self.transform = T.Compose(
-			[T.Resize((image_size, image_size)), T.ToTensor()]
+			[
+				T.Resize((image_size, image_size)),
+				T.ToTensor(),
+				T.Normalize(
+					mean=[0.485, 0.456, 0.406],
+					std=[0.229, 0.224, 0.225],
+				),
+			]
 		)
 		self.test_ids = self._read_ids(Path(TEST_IDS_PATH))
+		self.train_ids = self._read_ids(Path(TRAIN_IDS_PATH))
+		self._validate_split_ids()
+		torch.manual_seed(self.seed)
+		random.seed(self.seed)
+		if torch.cuda.is_available():
+			torch.cuda.manual_seed_all(self.seed)
+			torch.backends.cudnn.deterministic = True
+			torch.backends.cudnn.benchmark = False
 		test_dataset = self._create_dataset(self.test_ids)
 		if not test_dataset:
 			raise ValueError("The configured test IDs produced an empty test dataset.")
+		if {entry["dish_id"] for entry in test_dataset.entries} != set(self.test_ids):
+			raise ValueError(
+				"Configured test IDs do not match usable dataset entries."
+			)
 		checkpoint_root = (
 			Path(MODEL_CHECKPOINT_DIR)
 			/ "simple_cnn"
@@ -78,18 +105,32 @@ class CNNExperiment(BaseExperiment):
 			test_dish_count=len(self.test_ids),
 			target_names=self.TARGET_NAMES,
 			criterion=nn.MSELoss(),
-			device="cuda",
+			device="cuda" if torch.cuda.is_available() else "cpu",
 			collate_fn=collate_nutrition5k,
+			seed=self.seed,
+			early_stopping_patience=early_stopping_patience,
+			gradient_clip_norm=gradient_clip_norm,
+			use_amp=use_amp,
 			resume_from=resume_from,
 		)
 
 	@staticmethod
 	def _read_ids(path: Path) -> list[str]:
-		return [
+		ids = [
 			line.strip()
 			for line in path.read_text(encoding="utf-8-sig").splitlines()
 			if line.strip()
 		]
+		if len(ids) != len(set(ids)):
+			raise ValueError(f"Duplicate dish IDs found in {path}.")
+		return ids
+
+	def _validate_split_ids(self) -> None:
+		overlap = set(self.train_ids) & set(self.test_ids)
+		if overlap:
+			raise ValueError(
+				f"Train/test dish ID overlap detected: {sorted(overlap)[:5]}"
+			)
 
 	def _create_dataset(
 		self, dish_ids: list[str], *, training: bool = False
@@ -131,6 +172,18 @@ class CNNExperiment(BaseExperiment):
 				f"{run_label} has an empty train or validation dataset. "
 				"Check the configured training IDs and available imagery."
 			)
+		train_entry_ids = {entry["dish_id"] for entry in train_dataset.entries}
+		validation_entry_ids = {
+			entry["dish_id"] for entry in validation_dataset.entries
+		}
+		if train_entry_ids != set(train_ids):
+			raise ValueError(
+				f"{run_label} train IDs do not match usable dataset entries."
+			)
+		if validation_entry_ids != set(validation_ids):
+			raise ValueError(
+				f"{run_label} validation IDs do not match usable dataset entries."
+			)
 		training_targets = torch.tensor(
 			[entry["targets"] for entry in train_dataset.entries],
 			dtype=torch.float32,
@@ -142,6 +195,7 @@ class CNNExperiment(BaseExperiment):
 			train_dataset.sample_weights,
 			num_samples=len(train_dataset),
 			replacement=True,
+			generator=self.loader_generator,
 		)
 		train_loader = self._create_loader(train_dataset, sampler=train_sampler)
 		validation_loader = self._create_loader(validation_dataset)
@@ -168,6 +222,10 @@ class CNNExperiment(BaseExperiment):
 			"uses_side_views": True,
 			"target_mean": target_mean.tolist(),
 			"target_std": target_std.tolist(),
+			"seed": self.seed,
+			"early_stopping_patience": self.early_stopping_patience,
+			"gradient_clip_norm": self.gradient_clip_norm,
+			"use_amp": self.use_amp,
 		}
 		return FoldSetup(
 			model=model,

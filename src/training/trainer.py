@@ -1,4 +1,5 @@
 from collections.abc import Callable, Iterable, Mapping
+from contextlib import nullcontext
 import os
 from pathlib import Path
 import sys
@@ -164,6 +165,9 @@ def _run_epoch(
     progress_label: Optional[str] = None,
     target_mean: Optional[Tensor] = None,
     target_std: Optional[Tensor] = None,
+    gradient_clip_norm: Optional[float] = None,
+    scaler: Optional[torch.amp.GradScaler] = None,
+    use_amp: bool = False,
 ) -> float:
     training = optimizer is not None
     model.train(training)
@@ -181,20 +185,39 @@ def _run_epoch(
             batch_count += 1
             if not isinstance(raw_batch, Mapping):
                 raise TypeError("Each data-loader batch must be a mapping.")
-            loss, batch_size = _compute_batch_loss(
-                model,
-                raw_batch,
-                criterion,
-                device,
-                target_key,
-                target_mean,
-                target_std,
-            )
+            with (
+                torch.autocast(device_type=device.type, enabled=use_amp)
+                if use_amp
+                else nullcontext()
+            ):
+                loss, batch_size = _compute_batch_loss(
+                    model,
+                    raw_batch,
+                    criterion,
+                    device,
+                    target_key,
+                    target_mean,
+                    target_std,
+                )
 
             if training:
                 optimizer.zero_grad(set_to_none=True)
-                loss.backward()
-                optimizer.step()
+                if scaler is not None and use_amp:
+                    scaler.scale(loss).backward()
+                    if gradient_clip_norm is not None:
+                        scaler.unscale_(optimizer)
+                        torch.nn.utils.clip_grad_norm_(
+                            model.parameters(), gradient_clip_norm
+                        )
+                    scaler.step(optimizer)
+                    scaler.update()
+                else:
+                    loss.backward()
+                    if gradient_clip_norm is not None:
+                        torch.nn.utils.clip_grad_norm_(
+                            model.parameters(), gradient_clip_norm
+                        )
+                    optimizer.step()
 
             total_loss += loss.detach().item() * batch_size
             sample_count += batch_size
@@ -232,6 +255,10 @@ def train_model(
     target_mean: Optional[Tensor] = None,
     target_std: Optional[Tensor] = None,
     scheduler: Optional[LRScheduler] = None,
+    metadata: Optional[Mapping[str, Any]] = None,
+    early_stopping_patience: Optional[int] = None,
+    gradient_clip_norm: Optional[float] = None,
+    use_amp: bool = False,
 ) -> dict[str, list[float]]:
     """Train a ``BaseModel`` on CUDA by default and return sample-weighted losses.
 
@@ -242,6 +269,10 @@ def train_model(
     """
     if epochs <= 0:
         raise ValueError("epochs must be a positive integer.")
+    if early_stopping_patience is not None and early_stopping_patience < 1:
+        raise ValueError("early_stopping_patience must be positive.")
+    if gradient_clip_norm is not None and gradient_clip_norm <= 0:
+        raise ValueError("gradient_clip_norm must be positive.")
     if not target_key:
         raise ValueError("target_key must not be empty.")
     if best_checkpoint_path is not None and validation_loader is None:
@@ -253,7 +284,13 @@ def train_model(
     ):
         raise ValueError("Latest and best checkpoints must use different paths.")
 
-    selected_device = torch.device(device if device is not None else "cuda")
+    selected_device = torch.device(
+        device if device is not None else ("cuda" if torch.cuda.is_available() else "cpu")
+    )
+    if selected_device.type == "cuda" and not torch.cuda.is_available():
+        raise RuntimeError("CUDA was requested but is not available.")
+    use_amp = use_amp and selected_device.type == "cuda"
+    scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
     training_started_at = time.perf_counter()
     model.to(selected_device)
 
@@ -261,6 +298,7 @@ def train_model(
     best_val_loss = None
     best_epoch = None
     history = {"train_loss": []}
+    epochs_without_improvement = 0
     if resume_from is not None:
         progress = model.load_checkpoint(
             resume_from,
@@ -283,6 +321,12 @@ def train_model(
     for epoch in range(start_epoch + 1, start_epoch + epochs + 1):
         epoch_label = f"{progress_label}, " if progress_label else ""
         epoch_label += f"epoch {epoch}/{start_epoch + epochs}"
+        train_epoch_options = {}
+        if gradient_clip_norm is not None:
+            train_epoch_options["gradient_clip_norm"] = gradient_clip_norm
+        if use_amp:
+            train_epoch_options["scaler"] = scaler
+            train_epoch_options["use_amp"] = True
         history["train_loss"].append(
             _run_epoch(
                 model,
@@ -294,8 +338,10 @@ def train_model(
                 progress_label=f"{epoch_label} train",
                 target_mean=target_mean,
                 target_std=target_std,
+                **train_epoch_options,
             )
         )
+        validation_epoch_options = {"use_amp": True} if use_amp else {}
         if validation_loader is not None:
             val_loss = _run_epoch(
                 model,
@@ -306,12 +352,16 @@ def train_model(
                 progress_label=f"{epoch_label} val",
                 target_mean=target_mean,
                 target_std=target_std,
+                **validation_epoch_options,
             )
             history["val_loss"].append(val_loss)
 
             if best_val_loss is None or val_loss < best_val_loss:
                 best_val_loss = val_loss
                 best_epoch = epoch
+                epochs_without_improvement = 0
+            else:
+                epochs_without_improvement += 1
 
         if scheduler is not None:
             scheduler.step()
@@ -327,6 +377,7 @@ def train_model(
                     best_val_loss=best_val_loss,
                     best_epoch=best_epoch,
                     model_config=model_config,
+                    metadata=metadata,
                 )
 
         if last_checkpoint_path is not None:
@@ -339,6 +390,7 @@ def train_model(
                 best_val_loss=best_val_loss,
                 best_epoch=best_epoch,
                 model_config=model_config,
+                metadata=metadata,
             )
 
         stats = f"train_loss={history['train_loss'][-1]:.4f}"
@@ -354,6 +406,16 @@ def train_model(
         if os.path.exists("./stop_training.txt"):
             print("Stop training file detected after validation. Exiting training loop.")
             Path("./stop_training.txt").unlink(missing_ok=True)
+            break
+        if (
+            validation_loader is not None
+            and early_stopping_patience is not None
+            and epochs_without_improvement >= early_stopping_patience
+        ):
+            print(
+                f"Early stopping after {early_stopping_patience} epochs "
+                "without validation improvement."
+            )
             break
 
     return history

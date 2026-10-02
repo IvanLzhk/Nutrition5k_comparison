@@ -4,8 +4,10 @@ from dataclasses import dataclass
 import json
 from pathlib import Path
 import shutil
+import random
 from typing import Any
 
+import torch
 from torch import Tensor, nn
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
@@ -45,6 +47,10 @@ class BaseExperiment(ABC):
 		criterion: nn.Module,
 		device: str,
 		collate_fn: Callable | None = None,
+		seed: int = 42,
+		early_stopping_patience: int | None = None,
+		gradient_clip_norm: float | None = None,
+		use_amp: bool = False,
 		resume_from: Path | None = None,
 	) -> None:
 		self.epochs = epochs
@@ -63,6 +69,12 @@ class BaseExperiment(ABC):
 		self.criterion = criterion
 		self.device = device
 		self.collate_fn = collate_fn
+		self.seed = seed
+		self.early_stopping_patience = early_stopping_patience
+		self.gradient_clip_norm = gradient_clip_norm
+		self.use_amp = use_amp and device == "cuda"
+		self.loader_generator = torch.Generator()
+		self.loader_generator.manual_seed(seed)
 		self.resume_from = resume_from
 
 	def _create_loader(
@@ -74,11 +86,18 @@ class BaseExperiment(ABC):
 			dataset,
 			batch_size=self.batch_size,
 			num_workers=self.num_workers,
-			pin_memory=True,
+			pin_memory=getattr(self, "device", "cpu") == "cuda",
 			persistent_workers=self.num_workers > 0,
 			sampler=sampler,
 			collate_fn=getattr(self, "collate_fn", None),
+			worker_init_fn=self._seed_worker,
+			generator=getattr(self, "loader_generator", None),
 		)
+
+	@staticmethod
+	def _seed_worker(worker_id: int) -> None:
+		worker_seed = torch.initial_seed() % (2**32)
+		random.seed(worker_seed)
 
 	@abstractmethod
 	def _get_splits(self) -> Iterable[tuple[list[str], list[str]]]:
@@ -156,6 +175,15 @@ class BaseExperiment(ABC):
 			resume_from=self.resume_from,
 			target_mean=fold.target_mean,
 			target_std=fold.target_std,
+			metadata={
+				"seed": self.seed,
+				"device": self.device,
+				"use_amp": self.use_amp,
+				"gradient_clip_norm": self.gradient_clip_norm,
+			},
+			early_stopping_patience=self.early_stopping_patience,
+			gradient_clip_norm=self.gradient_clip_norm,
+			use_amp=self.use_amp,
 		)
 		evaluation_checkpoint_path = best_checkpoint_path
 		if not (

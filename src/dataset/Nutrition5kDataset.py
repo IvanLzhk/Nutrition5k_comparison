@@ -1,5 +1,7 @@
+import csv
 import hashlib
 import json
+import math
 import os
 import tempfile
 from pathlib import Path
@@ -10,7 +12,7 @@ import torchvision.transforms as T
 
 
 class Nutrition5kDataset(Dataset):
-    CACHE_VERSION = 1
+    CACHE_VERSION = 2
 
     def __init__(
         self,
@@ -42,26 +44,37 @@ class Nutrition5kDataset(Dataset):
         self.entries = []
         dish_filter = set(dish_ids) if dish_ids is not None else None
 
-        with open(metadata_path, "r", encoding="utf-8") as f:
-            for line in f:
-                parts = line.strip().split(",")
-                if len(parts) < 6:
+        seen_dish_ids = set()
+        with open(metadata_path, "r", newline="", encoding="utf-8-sig") as f:
+            for line_number, parts in enumerate(csv.reader(f), start=1):
+                if not parts or not any(part.strip() for part in parts):
                     continue
+                if parts[0].strip().lower() in {"dish_id", "dish id"}:
+                    continue
+                if len(parts) < 6:
+                    raise ValueError(
+                        f"Metadata row {line_number} has fewer than six columns."
+                    )
 
-                dish_id = parts[0]
+                dish_id = parts[0].strip()
+                if not dish_id:
+                    raise ValueError(f"Metadata row {line_number} has an empty dish ID.")
+                if dish_id in seen_dish_ids:
+                    raise ValueError(f"Duplicate dish ID in metadata: {dish_id!r}.")
+                seen_dish_ids.add(dish_id)
                 if dish_filter and dish_id not in dish_filter:
                     continue
 
                 try:
-                    targets = [
-                        float(parts[1]),  # calories
-                        float(parts[2]),  # mass (g)
-                        float(parts[3]),  # fat (g)
-                        float(parts[4]),  # carb (g)
-                        float(parts[5]),  # protein (g)
-                    ]
-                except ValueError:
-                    continue
+                    targets = [float(value) for value in parts[1:6]]
+                except ValueError as error:
+                    raise ValueError(
+                        f"Metadata row {line_number} has non-numeric targets."
+                    ) from error
+                if not all(math.isfinite(value) and value >= 0 for value in targets):
+                    raise ValueError(
+                        f"Metadata row {line_number} has invalid target values."
+                    )
 
                 dish_overhead = os.path.join(self.overhead_dir, dish_id)
                 dish_side = os.path.join(self.side_angles_dir, dish_id)
@@ -73,6 +86,18 @@ class Nutrition5kDataset(Dataset):
                         "overhead_path": dish_overhead,
                         "side_path": dish_side
                     })
+
+        unusable_entries = [
+            entry["dish_id"]
+            for entry in self.entries
+            if not os.path.isfile(os.path.join(entry["overhead_path"], "rgb.png"))
+            and not self._get_image_paths(entry["side_path"])
+        ]
+        if unusable_entries:
+            raise ValueError(
+                "Dishes without usable imagery: "
+                f"{unusable_entries[:5]}"
+            )
 
         self.image_samples = []
         sample_counts = {}

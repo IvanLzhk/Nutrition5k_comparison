@@ -16,17 +16,21 @@ def build_train_augmentation() -> T.Compose:
 
 
 # Experiment settings
-EPOCHS = 1
+EPOCHS = 50
 FOLDS = None
 BATCH_SIZE = 64
 NUM_WORKERS = 8
 LEARNING_RATE = 1e-3
 ACCURACY_TOLERANCE_PERCENT = 10.0
-IMAGE_SIZE = 244#384
+IMAGE_SIZE = 384
 CACHE_DIR = Path("data/cache/nutrition5k")
 AUGMENTATION_FACTORY = build_train_augmentation
 NUM_LAYERS = 3
 WIDTH = 32
+SEED = 42
+EARLY_STOPPING_PATIENCE = 8
+GRADIENT_CLIP_NORM = 1.0
+USE_AMP = True
 RESUME_FROM = Path("checkpoints/simple_cnn/2026.09.30_22-21-48/single_split/simple_cnn_best.pt")
 
 
@@ -43,9 +47,13 @@ def main() -> None:
 		augmentation_factory=AUGMENTATION_FACTORY,
 		num_layers=NUM_LAYERS,
 		width=WIDTH,
+		seed=SEED,
+		early_stopping_patience=EARLY_STOPPING_PATIENCE,
+		gradient_clip_norm=GRADIENT_CLIP_NORM,
+		use_amp=USE_AMP,
 		resume_from=RESUME_FROM,
 	).run()
 
 
 if __name__ == "__main__":
-	main() #TODO: Check if normalisation of target inside fold even needed
+	main()

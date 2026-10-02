@@ -37,6 +37,24 @@ class LinearRegressionModel(BaseModel):
 
 
 class TrainModelTests(unittest.TestCase):
+    def test_early_stopping_stops_after_patience(self):
+        model = LinearRegressionModel()
+        loader = DataLoader(RegressionDataset(), batch_size=4)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            history = train_model(
+                model=model,
+                train_loader=loader,
+                optimizer=torch.optim.SGD(model.parameters(), lr=0.0),
+                criterion=nn.MSELoss(),
+                epochs=10,
+                validation_loader=loader,
+                device="cpu",
+                progress_label=None,
+                early_stopping_patience=2,
+            )
+
+        self.assertEqual(len(history["val_loss"]), 3)
+
     def test_test_model_reports_loss_without_updating_weights(self):
         loader = DataLoader(RegressionDataset(), batch_size=4)
         model = LinearRegressionModel()
