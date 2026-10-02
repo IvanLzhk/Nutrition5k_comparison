@@ -234,7 +234,9 @@ def _run_epoch(
                         )
                     optimizer.step()
 
-            total_loss += loss.detach().item() * batch_size
+            batch_loss = loss.detach().item()
+            del loss
+            total_loss += batch_loss * batch_size
             sample_count += batch_size
             if progress_label:
                 _write_progress(
