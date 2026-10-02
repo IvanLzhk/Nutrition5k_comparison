@@ -28,7 +28,7 @@ class CNNExperiment(BaseExperiment):
 		prefetch_factor: int = 1,
 		learning_rate: float = 1e-3,
 		accuracy_tolerance_percent: float = 10.0,
-		image_size: int = 384,
+		image_size: int = 244,
 		cache_dir: Path | None = Path("data/cache/nutrition5k"),
 		num_layers: int = 4,
 		width: int = 64,

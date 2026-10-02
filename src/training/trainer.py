@@ -190,6 +190,10 @@ def _run_epoch(
             batch_count += 1
             if not isinstance(raw_batch, Mapping):
                 raise TypeError("Each data-loader batch must be a mapping.")
+            if training:
+                # Release the previous batch's gradient buffers before allocating
+                # the next batch's forward activations.
+                optimizer.zero_grad(set_to_none=True)
             with (
                 torch.autocast(
                     device_type=device.type,
@@ -212,9 +216,7 @@ def _run_epoch(
                     target_mean,
                     target_std,
                 )
-
             if training:
-                optimizer.zero_grad(set_to_none=True)
                 if scaler is not None and use_amp:
                     scaler.scale(loss).backward()
                     if gradient_clip_norm is not None:
@@ -356,6 +358,8 @@ def train_model(
         )
         validation_epoch_options = {"use_amp": True} if use_amp else {}
         if validation_loader is not None:
+            # Keep training gradients from competing with validation activations.
+            optimizer.zero_grad(set_to_none=True)
             val_loss = _run_epoch(
                 model,
                 validation_loader,
