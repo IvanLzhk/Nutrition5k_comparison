@@ -17,7 +17,7 @@ from src.models import BaseModel
 
 def _move_to_device(value: Any, device: torch.device) -> Any:
     if isinstance(value, Tensor):
-        return value.to(device)
+        return value.to(device, non_blocking=device.type == "cuda")
     if isinstance(value, Mapping):
         return {key: _move_to_device(item, device) for key, item in value.items()}
     if isinstance(value, tuple):

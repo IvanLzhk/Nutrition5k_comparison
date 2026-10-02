@@ -52,18 +52,21 @@ class BaseExperiment(ABC):
 		gradient_clip_norm: float | None = None,
 		use_amp: bool = False,
 		resume_from: Path | None = None,
+		prefetch_factor: int = 1,
 	) -> None:
 		self.epochs = epochs
 		self.folds = folds
 		self.accuracy_tolerance_percent = accuracy_tolerance_percent
 		self.batch_size = batch_size
 		self.num_workers = num_workers
+		if prefetch_factor < 1:
+			raise ValueError("prefetch_factor must be positive.")
+		self.prefetch_factor = prefetch_factor
 		self.train_augmentation = (
 			augmentation_factory() if augmentation_factory is not None else None
 		)
 		self.checkpoint_root = checkpoint_root
 		self.model_name = model_name
-		self.test_loader = self._create_loader(test_dataset)
 		self.test_dish_count = test_dish_count
 		self.target_names = target_names
 		self.criterion = criterion
@@ -76,22 +79,28 @@ class BaseExperiment(ABC):
 		self.loader_generator = torch.Generator()
 		self.loader_generator.manual_seed(seed)
 		self.resume_from = resume_from
+		self.test_loader = self._create_loader(test_dataset)
 
 	def _create_loader(
 		self,
 		dataset: Dataset,
 		sampler: Sampler | None = None,
 	) -> DataLoader:
+		loader_options = {
+			"batch_size": self.batch_size,
+			"num_workers": self.num_workers,
+			"pin_memory": getattr(self, "device", "cpu") == "cuda",
+			"persistent_workers": self.num_workers > 0,
+			"sampler": sampler,
+			"collate_fn": getattr(self, "collate_fn", None),
+			"worker_init_fn": self._seed_worker,
+			"generator": getattr(self, "loader_generator", None),
+		}
+		if self.num_workers > 0:
+			loader_options["prefetch_factor"] = getattr(self, "prefetch_factor", 1)
 		return DataLoader(
 			dataset,
-			batch_size=self.batch_size,
-			num_workers=self.num_workers,
-			pin_memory=getattr(self, "device", "cpu") == "cuda",
-			persistent_workers=self.num_workers > 0,
-			sampler=sampler,
-			collate_fn=getattr(self, "collate_fn", None),
-			worker_init_fn=self._seed_worker,
-			generator=getattr(self, "loader_generator", None),
+			**loader_options,
 		)
 
 	@staticmethod

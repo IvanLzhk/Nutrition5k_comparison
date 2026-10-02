@@ -18,11 +18,12 @@ def build_train_augmentation() -> T.Compose:
 # Experiment settings
 EPOCHS = 50
 FOLDS = None
-BATCH_SIZE = 64
-NUM_WORKERS = 8
+BATCH_SIZE = 8
+NUM_WORKERS = 4
+PREFETCH_FACTOR = 1
 LEARNING_RATE = 1e-3
 ACCURACY_TOLERANCE_PERCENT = 10.0
-IMAGE_SIZE = 384
+IMAGE_SIZE = 244
 CACHE_DIR = Path("data/cache/nutrition5k")
 AUGMENTATION_FACTORY = build_train_augmentation
 NUM_LAYERS = 3
@@ -31,7 +32,7 @@ SEED = 42
 EARLY_STOPPING_PATIENCE = 8
 GRADIENT_CLIP_NORM = 1.0
 USE_AMP = True
-RESUME_FROM = Path("checkpoints/simple_cnn/2026.09.30_22-21-48/single_split/simple_cnn_best.pt")
+RESUME_FROM = None# Example: Path("checkpoints/simple_cnn/2026.09.30_22-21-48/single_split/simple_cnn_best.pt")
 
 
 def main() -> None:
@@ -40,6 +41,7 @@ def main() -> None:
 		folds=FOLDS,
 		batch_size=BATCH_SIZE,
 		num_workers=NUM_WORKERS,
+		prefetch_factor=PREFETCH_FACTOR,
 		learning_rate=LEARNING_RATE,
 		accuracy_tolerance_percent=ACCURACY_TOLERANCE_PERCENT,
 		image_size=IMAGE_SIZE,

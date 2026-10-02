@@ -12,7 +12,7 @@ import torchvision.transforms as T
 
 
 class Nutrition5kDataset(Dataset):
-    CACHE_VERSION = 2
+    CACHE_VERSION = 3
 
     def __init__(
         self,
@@ -23,6 +23,7 @@ class Nutrition5kDataset(Dataset):
         image_level=False,
         cache_dir=None,
         augmentation=None,
+        post_transform=None,
     ):
         """
         Args:
@@ -40,6 +41,7 @@ class Nutrition5kDataset(Dataset):
         self.image_level = image_level
         self.cache_dir = Path(cache_dir) if cache_dir is not None else None
         self.augmentation = augmentation
+        self.post_transform = post_transform
 
         self.entries = []
         dish_filter = set(dish_ids) if dish_ids is not None else None
@@ -169,7 +171,7 @@ class Nutrition5kDataset(Dataset):
             except OSError:
                 cache_path.unlink(missing_ok=True)
             else:
-                return self.augmentation(tensor) if self.augmentation else tensor
+                return self._apply_image_transforms(tensor)
 
         with Image.open(path) as image_file:
             img = image_file.convert("RGB")
@@ -177,17 +179,16 @@ class Nutrition5kDataset(Dataset):
         if flip_vertical:
             tensor = torch.flip(tensor, dims=[1])
 
-        if cache_path is not None:
-            if (
-                not isinstance(tensor, torch.Tensor)
-                or tensor.ndim != 3
-                or tensor.size(0) != 3
-                or tensor.is_floating_point()
-                and (tensor.min().item() < 0 or tensor.max().item() > 1)
-            ):
-                raise ValueError(
-                    "Image caching requires a 3-channel image tensor with values in [0, 1]."
-                )
+        can_cache = (
+            cache_path is not None
+            and isinstance(tensor, torch.Tensor)
+            and tensor.ndim == 3
+            and tensor.size(0) == 3
+            and torch.isfinite(tensor).all()
+            and tensor.min().item() >= 0
+            and tensor.max().item() <= 1
+        )
+        if can_cache:
             cache_path.parent.mkdir(parents=True, exist_ok=True)
             temporary_path = None
             try:
@@ -206,7 +207,14 @@ class Nutrition5kDataset(Dataset):
                 if temporary_path is not None:
                     temporary_path.unlink(missing_ok=True)
 
-        return self.augmentation(tensor) if self.augmentation else tensor
+        return self._apply_image_transforms(tensor)
+
+    def _apply_image_transforms(self, tensor):
+        if self.augmentation:
+            tensor = self.augmentation(tensor)
+        if self.post_transform:
+            tensor = self.post_transform(tensor)
+        return tensor
 
     def __getitem__(self, idx):
         if self.image_level:

@@ -157,6 +157,30 @@ class Nutrition5kDatasetTests(unittest.TestCase):
         self.assertEqual(small_image.shape, (3, 2, 2))
         self.assertEqual(len(list(cache_dir.glob("*.png"))), 2)
 
+    def test_image_cache_skips_tensors_not_representable_as_png(self):
+        cache_dir = self.root / "cache"
+        normalized_transform = T.Compose(
+            [
+                T.Resize((4, 4)),
+                T.ToTensor(),
+                T.Normalize(
+                    mean=[0.485, 0.456, 0.406],
+                    std=[0.229, 0.224, 0.225],
+                ),
+            ]
+        )
+        dataset = self._make_dataset(
+            cache_dir=cache_dir,
+            image_level=True,
+            transform=normalized_transform,
+        )
+
+        image = dataset[0]["overhead"]
+
+        self.assertEqual(image.shape, (3, 4, 4))
+        self.assertTrue(torch.isfinite(image).all())
+        self.assertEqual(list(cache_dir.glob("*.png")), [])
+
     def test_augmentation_runs_after_cache_load_on_every_access(self):
         cache_dir = self.root / "cache"
         call_count = 0

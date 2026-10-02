@@ -39,6 +39,7 @@ class CNNExperiment(BaseExperiment):
 		folds: int | None = None,
 		batch_size: int = BATCH_SIZE,
 		num_workers: int = NUM_WORKERS,
+		prefetch_factor: int = 1,
 		learning_rate: float = 1e-3,
 		accuracy_tolerance_percent: float = 10.0,
 		image_size: int = 384,
@@ -65,11 +66,19 @@ class CNNExperiment(BaseExperiment):
 			[
 				T.Resize((image_size, image_size)),
 				T.ToTensor(),
-				T.Normalize(
-					mean=[0.485, 0.456, 0.406],
-					std=[0.229, 0.224, 0.225],
-				),
 			]
+		)
+		self.post_transform = T.Normalize(
+			[
+				0.485,
+				0.456,
+				0.406,
+			],
+			[
+				0.229,
+				0.224,
+				0.225,
+			],
 		)
 		self.test_ids = self._read_ids(Path(TEST_IDS_PATH))
 		self.train_ids = self._read_ids(Path(TRAIN_IDS_PATH))
@@ -99,6 +108,7 @@ class CNNExperiment(BaseExperiment):
 			augmentation_factory=augmentation_factory,
 			batch_size=batch_size,
 			num_workers=num_workers,
+			prefetch_factor=prefetch_factor,
 			checkpoint_root=checkpoint_root,
 			model_name="simple_cnn",
 			test_dataset=test_dataset,
@@ -143,6 +153,7 @@ class CNNExperiment(BaseExperiment):
 			image_level=False,
 			cache_dir=str(self.cache_dir) if self.cache_dir is not None else None,
 			augmentation=self.train_augmentation if training else None,
+			post_transform=getattr(self, "post_transform", None),
 		)
 
 	def _get_splits(self) -> list[tuple[list[str], list[str]]]:
