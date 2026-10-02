@@ -32,7 +32,7 @@ WIDTH = 32
 SEED = 42
 EARLY_STOPPING_PATIENCE = 8
 GRADIENT_CLIP_NORM = 1.0
-GRADIENT_ACCUMULATION_STEPS = 1
+GRADIENT_ACCUMULATION_STEPS = 4
 USE_AMP = True
 RESUME_FROM = None# Example: Path("checkpoints/simple_cnn/2026.09.30_22-21-48/single_split/simple_cnn_best.pt")
 

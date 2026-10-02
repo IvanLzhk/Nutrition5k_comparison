@@ -194,26 +194,24 @@ def _run_epoch(
         if scaler is not None and use_amp:
             if gradient_clip_norm is not None:
                 scaler.unscale_(optimizer)
-                torch.nn.utils.clip_grad_norm_(
-                    model.parameters(), gradient_clip_norm
-                )
+                torch.nn.utils.clip_grad_norm_(model.parameters(), gradient_clip_norm)
             scaler.step(optimizer)
             scaler.update()
         else:
             if gradient_clip_norm is not None:
-                torch.nn.utils.clip_grad_norm_(
-                    model.parameters(), gradient_clip_norm
-                )
+                torch.nn.utils.clip_grad_norm_(model.parameters(), gradient_clip_norm)
             optimizer.step()
+        optimizer.zero_grad(set_to_none=True)
+
+    if training:
+        optimizer.zero_grad(set_to_none=True)
 
     with torch.set_grad_enabled(training):
         for raw_batch in data_loader:
             batch_count += 1
             if not isinstance(raw_batch, Mapping):
                 raise TypeError("Each data-loader batch must be a mapping.")
-            if training:
-                if accumulation_count == 0:
-                    optimizer.zero_grad(set_to_none=True)
+
             with (
                 torch.autocast(
                     device_type=device.type,
@@ -236,21 +234,21 @@ def _run_epoch(
                     target_mean,
                     target_std,
                 )
+
+            batch_loss = loss.detach().item()
+
             if training:
                 scaled_loss = loss / gradient_accumulation_steps
                 if scaler is not None and use_amp:
                     scaler.scale(scaled_loss).backward()
                 else:
                     scaled_loss.backward()
+
                 accumulation_count += 1
-                should_step = (
-                    accumulation_count == gradient_accumulation_steps
-                )
-                if should_step:
+                if accumulation_count == gradient_accumulation_steps:
                     step_optimizer()
                     accumulation_count = 0
 
-            batch_loss = loss.detach().item()
             del loss
             total_loss += batch_loss * batch_size
             sample_count += batch_size
@@ -263,7 +261,7 @@ def _run_epoch(
                     time.perf_counter() - phase_started_at,
                 )
 
-    if training and accumulation_count:
+    if training and accumulation_count > 0:
         step_optimizer()
 
     if sample_count == 0:
@@ -361,13 +359,11 @@ def train_model(
     for epoch in range(start_epoch + 1, start_epoch + epochs + 1):
         epoch_label = f"{progress_label}, " if progress_label else ""
         epoch_label += f"epoch {epoch}/{start_epoch + epochs}"
-        train_epoch_options = {}
+        train_epoch_options = {
+            "gradient_accumulation_steps": gradient_accumulation_steps,
+        }
         if gradient_clip_norm is not None:
             train_epoch_options["gradient_clip_norm"] = gradient_clip_norm
-        if gradient_accumulation_steps != 1:
-            train_epoch_options["gradient_accumulation_steps"] = (
-                gradient_accumulation_steps
-            )
         if use_amp:
             train_epoch_options["scaler"] = scaler
             train_epoch_options["use_amp"] = True
