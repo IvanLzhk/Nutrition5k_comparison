@@ -31,6 +31,7 @@ class ResNet18Experiment(BaseExperiment):
             seed: int = 42,
             early_stopping_patience: int | None = 8,
             gradient_clip_norm: float | None = 1.0,
+            gradient_accumulation_steps: int = 1,
             use_amp: bool = True,
             resume_from: Path | None = None,
         ) -> None:
@@ -59,6 +60,7 @@ class ResNet18Experiment(BaseExperiment):
                 seed=seed,
                 early_stopping_patience=early_stopping_patience,
                 gradient_clip_norm=gradient_clip_norm,
+                gradient_accumulation_steps=gradient_accumulation_steps,
                 use_amp=use_amp,
                 resume_from=resume_from,
             )
@@ -108,7 +110,7 @@ class ResNet18Experiment(BaseExperiment):
 
         model = ResNet18(output_features=len(self.TARGET_NAMES))
         optimizer = torch.optim.AdamW(
-            model.parameters(), lr=self.learning_rate
+            model.parameters(), lr=self.learning_rate, weight_decay=1e-2
         )
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             optimizer, T_max=self.epochs

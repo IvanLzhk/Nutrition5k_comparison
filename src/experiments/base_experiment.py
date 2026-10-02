@@ -62,6 +62,7 @@ class BaseExperiment(ABC):
 		seed: int = 42,
 		early_stopping_patience: int | None = None,
 		gradient_clip_norm: float | None = None,
+		gradient_accumulation_steps: int = 1,
 		use_amp: bool = False,
 		resume_from: Path | None = None,
 	) -> None:
@@ -119,6 +120,9 @@ class BaseExperiment(ABC):
 		self.seed = seed
 		self.early_stopping_patience = early_stopping_patience
 		self.gradient_clip_norm = gradient_clip_norm
+		if gradient_accumulation_steps < 1:
+			raise ValueError("gradient_accumulation_steps must be positive.")
+		self.gradient_accumulation_steps = gradient_accumulation_steps
 		self.use_amp = use_amp and device == "cuda"
 		self.loader_generator = torch.Generator()
 		self.loader_generator.manual_seed(seed)
@@ -273,9 +277,11 @@ class BaseExperiment(ABC):
 				"device": self.device,
 				"use_amp": self.use_amp,
 				"gradient_clip_norm": self.gradient_clip_norm,
+				"gradient_accumulation_steps": self.gradient_accumulation_steps,
 			},
 			early_stopping_patience=self.early_stopping_patience,
 			gradient_clip_norm=self.gradient_clip_norm,
+			gradient_accumulation_steps=self.gradient_accumulation_steps,
 			use_amp=self.use_amp,
 		)
 		evaluation_checkpoint_path = best_checkpoint_path

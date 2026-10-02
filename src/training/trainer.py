@@ -173,7 +173,10 @@ def _run_epoch(
     gradient_clip_norm: Optional[float] = None,
     scaler: Optional[torch.amp.GradScaler] = None,
     use_amp: bool = False,
+    gradient_accumulation_steps: int = 1,
 ) -> float:
+    if not isinstance(gradient_accumulation_steps, int) or gradient_accumulation_steps < 1:
+        raise ValueError("gradient_accumulation_steps must be a positive integer.")
     training = optimizer is not None
     model.train(training)
     phase_started_at = time.perf_counter()
@@ -185,15 +188,32 @@ def _run_epoch(
     except (TypeError, NotImplementedError):
         total_batches = None
 
+    accumulation_count = 0
+
+    def step_optimizer() -> None:
+        if scaler is not None and use_amp:
+            if gradient_clip_norm is not None:
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(
+                    model.parameters(), gradient_clip_norm
+                )
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            if gradient_clip_norm is not None:
+                torch.nn.utils.clip_grad_norm_(
+                    model.parameters(), gradient_clip_norm
+                )
+            optimizer.step()
+
     with torch.set_grad_enabled(training):
         for raw_batch in data_loader:
             batch_count += 1
             if not isinstance(raw_batch, Mapping):
                 raise TypeError("Each data-loader batch must be a mapping.")
             if training:
-                # Release the previous batch's gradient buffers before allocating
-                # the next batch's forward activations.
-                optimizer.zero_grad(set_to_none=True)
+                if accumulation_count == 0:
+                    optimizer.zero_grad(set_to_none=True)
             with (
                 torch.autocast(
                     device_type=device.type,
@@ -217,22 +237,18 @@ def _run_epoch(
                     target_std,
                 )
             if training:
+                scaled_loss = loss / gradient_accumulation_steps
                 if scaler is not None and use_amp:
-                    scaler.scale(loss).backward()
-                    if gradient_clip_norm is not None:
-                        scaler.unscale_(optimizer)
-                        torch.nn.utils.clip_grad_norm_(
-                            model.parameters(), gradient_clip_norm
-                        )
-                    scaler.step(optimizer)
-                    scaler.update()
+                    scaler.scale(scaled_loss).backward()
                 else:
-                    loss.backward()
-                    if gradient_clip_norm is not None:
-                        torch.nn.utils.clip_grad_norm_(
-                            model.parameters(), gradient_clip_norm
-                        )
-                    optimizer.step()
+                    scaled_loss.backward()
+                accumulation_count += 1
+                should_step = (
+                    accumulation_count == gradient_accumulation_steps
+                )
+                if should_step:
+                    step_optimizer()
+                    accumulation_count = 0
 
             batch_loss = loss.detach().item()
             del loss
@@ -246,6 +262,9 @@ def _run_epoch(
                     total_loss / sample_count,
                     time.perf_counter() - phase_started_at,
                 )
+
+    if training and accumulation_count:
+        step_optimizer()
 
     if sample_count == 0:
         raise ValueError("The data loader produced no samples.")
@@ -276,13 +295,15 @@ def train_model(
     early_stopping_patience: Optional[int] = None,
     gradient_clip_norm: Optional[float] = None,
     use_amp: bool = False,
+    gradient_accumulation_steps: int = 1,
 ) -> dict[str, list[float]]:
     """Train a ``BaseModel`` on CUDA by default and return sample-weighted losses.
 
     Batches must be mappings containing ``target_key`` and any model inputs.
     The model receives all batch fields except the target. The criterion should
     return a scalar mean loss (for example, ``nn.MSELoss()``). Pass ``device="cpu"``
-    to explicitly train on the CPU.
+    to explicitly train on the CPU. ``gradient_accumulation_steps`` controls how
+    many batches contribute gradients to each optimizer step.
     """
     if epochs <= 0:
         raise ValueError("epochs must be a positive integer.")
@@ -290,6 +311,8 @@ def train_model(
         raise ValueError("early_stopping_patience must be positive.")
     if gradient_clip_norm is not None and gradient_clip_norm <= 0:
         raise ValueError("gradient_clip_norm must be positive.")
+    if not isinstance(gradient_accumulation_steps, int) or gradient_accumulation_steps < 1:
+        raise ValueError("gradient_accumulation_steps must be a positive integer.")
     if not target_key:
         raise ValueError("target_key must not be empty.")
     if best_checkpoint_path is not None and validation_loader is None:
@@ -341,6 +364,10 @@ def train_model(
         train_epoch_options = {}
         if gradient_clip_norm is not None:
             train_epoch_options["gradient_clip_norm"] = gradient_clip_norm
+        if gradient_accumulation_steps != 1:
+            train_epoch_options["gradient_accumulation_steps"] = (
+                gradient_accumulation_steps
+            )
         if use_amp:
             train_epoch_options["scaler"] = scaler
             train_epoch_options["use_amp"] = True

@@ -22,7 +22,7 @@ FOLDS = None
 BATCH_SIZE = 8
 NUM_WORKERS = 4
 PREFETCH_FACTOR = 1
-LEARNING_RATE = 1e-3
+LEARNING_RATE = 1e-4
 ACCURACY_TOLERANCE_PERCENT = 10.0
 IMAGE_SIZE = 244
 CACHE_DIR = Path("data/cache/nutrition5k")
@@ -32,6 +32,7 @@ WIDTH = 32
 SEED = 42
 EARLY_STOPPING_PATIENCE = 8
 GRADIENT_CLIP_NORM = 1.0
+GRADIENT_ACCUMULATION_STEPS = 1
 USE_AMP = True
 RESUME_FROM = None# Example: Path("checkpoints/simple_cnn/2026.09.30_22-21-48/single_split/simple_cnn_best.pt")
 
@@ -53,6 +54,7 @@ def main() -> None:
 		seed=SEED,
 		early_stopping_patience=EARLY_STOPPING_PATIENCE,
 		gradient_clip_norm=GRADIENT_CLIP_NORM,
+		gradient_accumulation_steps=GRADIENT_ACCUMULATION_STEPS,
 		use_amp=USE_AMP,
 		resume_from=RESUME_FROM,
 	).run()"""
@@ -70,6 +72,7 @@ def main() -> None:
 		seed=SEED,
 		early_stopping_patience=EARLY_STOPPING_PATIENCE,
 		gradient_clip_norm=GRADIENT_CLIP_NORM,
+		gradient_accumulation_steps=GRADIENT_ACCUMULATION_STEPS,
 		use_amp=USE_AMP,
 		resume_from=RESUME_FROM,
 	).run()
