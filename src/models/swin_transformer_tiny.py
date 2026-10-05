@@ -16,18 +16,24 @@ class SwinTransformerTiny(BaseModel):
         output_features: int = 5,
         *,
         weights: Swin_T_Weights | None = Swin_T_Weights.DEFAULT,
+        encode_batch_size: int = 8,
     ) -> None:
         super().__init__()
         if isinstance(output_features, bool) or not isinstance(output_features, int):
             raise ValueError("output_features must be a positive integer.")
         if output_features < 1:
             raise ValueError("output_features must be a positive integer.")
+        if isinstance(encode_batch_size, bool) or not isinstance(encode_batch_size, int):
+            raise ValueError("encode_batch_size must be a positive integer.")
+        if encode_batch_size < 1:
+            raise ValueError("encode_batch_size must be a positive integer.")
 
         backbone = swin_t(weights=weights)
         feature_channels = backbone.head.in_features
         backbone.head = nn.Identity()
         self.backbone = backbone
         self.feature_channels = feature_channels
+        self.encode_batch_size = encode_batch_size
         self.regressor = nn.Linear(feature_channels * 2, output_features)
         self._backbone_trainable = True
 
@@ -90,7 +96,15 @@ class SwinTransformerTiny(BaseModel):
     def _encode_images(self, images: Tensor) -> Tensor:
         if images.ndim != 4 or images.size(1) != 3:
             raise ValueError("Images must have shape (batch, 3, height, width).")
-        return self.backbone(images)
+        if images.size(0) <= self.encode_batch_size:
+            return self.backbone(images)
+        return torch.cat(
+            [
+                self.backbone(images[start : start + self.encode_batch_size])
+                for start in range(0, images.size(0), self.encode_batch_size)
+            ],
+            dim=0,
+        )
 
 
 SwinTiny = SwinTransformerTiny

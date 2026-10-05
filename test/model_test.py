@@ -1,11 +1,32 @@
 import unittest
 
 import torch
+from torch import nn
 
 from src.models import ResNet18, SimpleCNN, SwinTransformerTiny
 
 
 class SwinTransformerTinyTests(unittest.TestCase):
+    def test_encoding_chunks_large_image_batches(self):
+        model = SwinTransformerTiny(
+            output_features=5, weights=None, encode_batch_size=2
+        )
+        seen_batch_sizes = []
+
+        class RecordingBackbone(nn.Module):
+            def forward(self, images):
+                seen_batch_sizes.append(images.size(0))
+                return torch.zeros(
+                    (images.size(0), model.feature_channels),
+                    dtype=images.dtype,
+                )
+
+        model.backbone = RecordingBackbone()
+        encoded = model._encode_images(torch.rand(5, 3, 8, 8))
+
+        self.assertEqual(encoded.shape, (5, model.feature_channels))
+        self.assertEqual(seen_batch_sizes, [2, 2, 1])
+
     def test_frozen_backbone_stays_in_eval_mode(self):
         model = SwinTransformerTiny(output_features=5, weights=None)
         model.set_backbone_trainable(False)

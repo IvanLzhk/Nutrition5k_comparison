@@ -64,26 +64,7 @@ def main() -> None:
 	}
 
 	experiment_factories = [
-		(
-			"simple_cnn",
-			lambda: SimpleCNN(num_layers=NUM_LAYERS, width=WIDTH),
-			lambda: CNNExperiment(
-				**common_options,
-				learning_rate=CNN_LEARNING_RATE,
-				num_layers=NUM_LAYERS,
-				width=WIDTH,
-				resume_from=RESUME_FROM,
-			),
-		),
-		(
-			"resnet18",
-			ResNet18,
-			lambda: ResNet18Experiment(
-				**common_options,
-				learning_rate=RESNET_LEARNING_RATE,
-				resume_from=RESUME_FROM,
-			),
-		),
+				
 		(
 			"swin_transformer_tiny",
 			SwinTransformerTiny,
@@ -93,6 +74,26 @@ def main() -> None:
 				resume_from=RESUME_FROM,
 			),
 		),
+		(
+					"simple_cnn",
+					lambda: SimpleCNN(num_layers=NUM_LAYERS, width=WIDTH),
+					lambda: CNNExperiment(
+						**common_options,
+						learning_rate=CNN_LEARNING_RATE,
+						num_layers=NUM_LAYERS,
+						width=WIDTH,
+						resume_from=RESUME_FROM,
+					),
+				),
+				(
+					"resnet18",
+					ResNet18,
+					lambda: ResNet18Experiment(
+						**common_options,
+						learning_rate=RESNET_LEARNING_RATE,
+						resume_from=RESUME_FROM,
+					),
+				),
 	]
 
 	for model_name, model_factory, experiment_factory in experiment_factories:
