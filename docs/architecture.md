@@ -6,7 +6,7 @@ when folds are configured, the split branch repeats once per fold.
 
 ```mermaid
 flowchart TD
-    entry["main.py<br/>experiment configuration"] --> experiment["CNNExperiment"]
+    entry["main.py<br/>experiment configuration"] --> experiment["Sequential experiments"]
     config["setup.py<br/>dataset and checkpoint paths"] --> experiment
 
     experiment --> ids["Read train/test dish IDs<br/>validate no overlap"]
@@ -26,7 +26,7 @@ flowchart TD
 
     trainLoader --> trainer["BaseExperiment / train_model"]
     validationLoader --> trainer
-    trainer --> model["SimpleCNN"]
+    trainer --> model["SimpleCNN / ResNet18 / Swin Transformer Tiny"]
     model --> loss["MSELoss on standardized targets"]
     loss --> optimizer["AdamW + cosine scheduler"]
     optimizer --> trainer
@@ -75,9 +75,9 @@ flowchart LR
 ## Persistent outputs
 
 - `data/cache/nutrition5k/*.png`: transformed image cache entries.
-- `checkpoints/simple_cnn/<timestamp>/<split>/simple_cnn_latest.pt`: latest
-  training state.
-- `checkpoints/simple_cnn/<timestamp>/<split>/simple_cnn_best.pt`: best
-  validation checkpoint.
+- `checkpoints/<model>/<timestamp>/<split>/<model>_latest.pt`: latest
+  training state for each sequential experiment.
+- `checkpoints/<model>/<timestamp>/<split>/<model>_best.pt`: best validation
+  checkpoint for each sequential experiment.
 - Sibling `.json` files: readable checkpoint metadata and history.
 - `test_metrics.json`: final test metrics for the selected checkpoint.
