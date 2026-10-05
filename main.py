@@ -64,7 +64,17 @@ def main() -> None:
 	}
 
 	experiment_factories = [
-
+		(
+			"simple_cnn",
+			lambda: SimpleCNN(num_layers=NUM_LAYERS, width=WIDTH),
+			lambda: CNNExperiment(
+				**common_options,
+				learning_rate=CNN_LEARNING_RATE,
+				num_layers=NUM_LAYERS,
+				width=WIDTH,
+				resume_from=RESUME_FROM,
+			),
+		),
 		(
 			"resnet18",
 			ResNet18,
