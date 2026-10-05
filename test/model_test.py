@@ -2,7 +2,30 @@ import unittest
 
 import torch
 
-from src.models import ResNet18, SimpleCNN
+from src.models import ResNet18, SimpleCNN, SwinTransformerTiny
+
+
+class SwinTransformerTinyTests(unittest.TestCase):
+    def test_frozen_backbone_stays_in_eval_mode(self):
+        model = SwinTransformerTiny(output_features=5, weights=None)
+        model.set_backbone_trainable(False)
+        model.train()
+
+        self.assertFalse(model.backbone.training)
+        self.assertTrue(
+            all(not parameter.requires_grad for parameter in model.backbone.parameters())
+        )
+
+    def test_unfrozen_backbone_returns_to_train_mode(self):
+        model = SwinTransformerTiny(output_features=5, weights=None)
+        model.set_backbone_trainable(False)
+        model.set_backbone_trainable(True)
+        model.train()
+
+        self.assertTrue(model.backbone.training)
+        self.assertTrue(
+            all(parameter.requires_grad for parameter in model.backbone.parameters())
+        )
 
 
 class SimpleCNNMultiViewTests(unittest.TestCase):

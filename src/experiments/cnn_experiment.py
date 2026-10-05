@@ -78,7 +78,7 @@ class CNNExperiment(BaseExperiment):
 	) -> FoldSetup:
 		# A fold = one model training run on one slice of the dataset.
 		train_dataset = self._create_dataset(train_ids, training=True)
-		validation_dataset = self._create_dataset(validation_ids)
+		validation_dataset = self._create_dataset(validation_ids, image_level=False)
 		if not train_dataset or not validation_dataset:
 			raise ValueError(
 				f"{run_label} has an empty train or validation dataset. "

@@ -37,6 +37,23 @@ class LinearRegressionModel(BaseModel):
 
 
 class TrainModelTests(unittest.TestCase):
+    def test_epoch_start_callback_receives_each_epoch(self):
+        model = LinearRegressionModel()
+        loader = DataLoader(RegressionDataset(), batch_size=4)
+        epochs_seen = []
+
+        train_model(
+            model=model,
+            train_loader=loader,
+            optimizer=torch.optim.SGD(model.parameters(), lr=0.0),
+            criterion=nn.MSELoss(),
+            epochs=3,
+            device="cpu",
+            epoch_start_callback=epochs_seen.append,
+        )
+
+        self.assertEqual(epochs_seen, [1, 2, 3])
+
     def test_early_stopping_stops_after_patience(self):
         model = LinearRegressionModel()
         loader = DataLoader(RegressionDataset(), batch_size=4)

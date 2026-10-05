@@ -294,6 +294,7 @@ def train_model(
     gradient_clip_norm: Optional[float] = None,
     use_amp: bool = False,
     gradient_accumulation_steps: int = 1,
+    epoch_start_callback: Optional[Callable[[int], None]] = None,
 ) -> dict[str, list[float]]:
     """Train a ``BaseModel`` on CUDA by default and return sample-weighted losses.
 
@@ -357,6 +358,8 @@ def train_model(
         history.setdefault("val_loss", [])
 
     for epoch in range(start_epoch + 1, start_epoch + epochs + 1):
+        if epoch_start_callback is not None:
+            epoch_start_callback(epoch)
         epoch_label = f"{progress_label}, " if progress_label else ""
         epoch_label += f"epoch {epoch}/{start_epoch + epochs}"
         train_epoch_options = {

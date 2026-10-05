@@ -22,7 +22,10 @@ from setup import (
 	TEST_IDS_PATH,
 	TRAIN_IDS_PATH,
 )
-from src.dataset.Nutrition5kDataset import Nutrition5kDataset
+from src.dataset.Nutrition5kDataset import (
+	Nutrition5kDataset,
+	collate_nutrition5k,
+)
 from src.models import BaseModel
 from src.training import get_kfold_splits, test_model, train_model
 
@@ -37,6 +40,7 @@ class FoldSetup:
 	model_config: Mapping[str, Any]
 	target_mean: Tensor
 	target_std: Tensor
+	epoch_start_callback: Callable[[int], None] | None = None
 
 
 class BaseExperiment(ABC):
@@ -105,7 +109,7 @@ class BaseExperiment(ABC):
 			torch.backends.cudnn.benchmark = False
 		self.checkpoint_root = checkpoint_root
 		self.model_name = model_name
-		test_dataset = self._create_dataset(self.test_ids)
+		test_dataset = self._create_dataset(self.test_ids, image_level=False)
 		if not test_dataset:
 			raise ValueError("The configured test IDs produced an empty test dataset.")
 		if {entry["dish_id"] for entry in test_dataset.entries} != set(self.test_ids):
@@ -148,14 +152,18 @@ class BaseExperiment(ABC):
 			)
 
 	def _create_dataset(
-		self, dish_ids: list[str], *, training: bool = False
+		self,
+		dish_ids: list[str],
+		*,
+		training: bool = False,
+		image_level: bool = True,
 	) -> Nutrition5kDataset:
 		return Nutrition5kDataset(
 			str(self.metadata_path),
 			str(self.imagery_root),
 			transform=self.transform,
 			dish_ids=dish_ids,
-			image_level=True,
+			image_level=image_level,
 			cache_dir=str(self.cache_dir) if self.cache_dir is not None else None,
 			augmentation=self.train_augmentation if training else None,
 			post_transform=getattr(self, "post_transform", None),
@@ -166,13 +174,16 @@ class BaseExperiment(ABC):
 		dataset: Dataset,
 		sampler: Sampler | None = None,
 	) -> DataLoader:
+		collate_fn = getattr(self, "collate_fn", None)
+		if collate_fn is None and not getattr(dataset, "image_level", True):
+			collate_fn = collate_nutrition5k
 		loader_options = {
 			"batch_size": self.batch_size,
 			"num_workers": self.num_workers,
 			"pin_memory": getattr(self, "device", "cpu") == "cuda",
 			"persistent_workers": self.num_workers > 0,
 			"sampler": sampler,
-			"collate_fn": getattr(self, "collate_fn", None),
+			"collate_fn": collate_fn,
 			"worker_init_fn": self._seed_worker,
 			"generator": getattr(self, "loader_generator", None),
 		}
@@ -283,6 +294,7 @@ class BaseExperiment(ABC):
 			gradient_clip_norm=self.gradient_clip_norm,
 			gradient_accumulation_steps=self.gradient_accumulation_steps,
 			use_amp=self.use_amp,
+			epoch_start_callback=fold.epoch_start_callback,
 		)
 		evaluation_checkpoint_path = best_checkpoint_path
 		if not (
