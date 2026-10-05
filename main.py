@@ -23,11 +23,12 @@ def build_train_augmentation() -> T.Compose:
 # Experiment settings
 EPOCHS = 50
 FOLDS = None
-# A 1660 Ti has 6 GB VRAM; keep this fixed for every experiment.
-BATCH_SIZE = 4
+BATCH_SIZE = 32
 NUM_WORKERS = 4
 PREFETCH_FACTOR = 1
-LEARNING_RATE = 1e-4
+CNN_LEARNING_RATE = 1e-4
+RESNET_LEARNING_RATE = 1e-4
+SWIN_LEARNING_RATE = 5e-5
 ACCURACY_TOLERANCE_PERCENT = 10.0
 IMAGE_SIZE = 244
 CACHE_DIR = Path("data/cache/nutrition5k")
@@ -39,7 +40,7 @@ WIDTH = 85
 SEED = 42
 EARLY_STOPPING_PATIENCE = 8
 GRADIENT_CLIP_NORM = 1.0
-GRADIENT_ACCUMULATION_STEPS = 4
+GRADIENT_ACCUMULATION_STEPS = 2
 USE_AMP = True
 RESUME_FROM = None# Example: Path("checkpoints/simple_cnn/2026.09.30_22-21-48/single_split/simple_cnn_best.pt")
 
@@ -51,7 +52,6 @@ def main() -> None:
 		"batch_size": BATCH_SIZE,
 		"num_workers": NUM_WORKERS,
 		"prefetch_factor": PREFETCH_FACTOR,
-		"learning_rate": LEARNING_RATE,
 		"accuracy_tolerance_percent": ACCURACY_TOLERANCE_PERCENT,
 		"image_size": IMAGE_SIZE,
 		"cache_dir": CACHE_DIR,
@@ -64,26 +64,22 @@ def main() -> None:
 	}
 
 	experiment_factories = [
-		(
-			"simple_cnn",
-			lambda: SimpleCNN(num_layers=NUM_LAYERS, width=WIDTH),
-			lambda: CNNExperiment(
-				**common_options,
-				num_layers=NUM_LAYERS,
-				width=WIDTH,
-				resume_from=RESUME_FROM,
-			),
-		),
+
 		(
 			"resnet18",
 			ResNet18,
-			lambda: ResNet18Experiment(**common_options, resume_from=RESUME_FROM),
+			lambda: ResNet18Experiment(
+				**common_options,
+				learning_rate=RESNET_LEARNING_RATE,
+				resume_from=RESUME_FROM,
+			),
 		),
 		(
 			"swin_transformer_tiny",
 			SwinTransformerTiny,
 			lambda: SwinTransformerTinyExperiment(
 				**common_options,
+				learning_rate=SWIN_LEARNING_RATE,
 				resume_from=RESUME_FROM,
 			),
 		),

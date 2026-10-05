@@ -26,7 +26,7 @@ class SwinTransformerTinyExperiment(BaseExperiment):
         batch_size: int = BATCH_SIZE,
         num_workers: int = NUM_WORKERS,
         prefetch_factor: int = 1,
-        learning_rate: float = 1e-4,
+        learning_rate: float = 5e-5,
         accuracy_tolerance_percent: float = 10.0,
         image_size: int = 224,
         cache_dir: Path | None = Path("data/cache/nutrition5k"),
