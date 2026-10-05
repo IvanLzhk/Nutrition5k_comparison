@@ -278,6 +278,7 @@ class TrainModelTests(unittest.TestCase):
             progress_label=None,
             target_mean=None,
             target_std=None,
+            gradient_accumulation_steps=1,
         ):
             if optimizer is not None:
                 optimizer.step()
@@ -395,6 +396,7 @@ class TrainModelTests(unittest.TestCase):
             progress_label=None,
             target_mean=None,
             target_std=None,
+            gradient_accumulation_steps=1,
         ):
             nonlocal training_epoch
             if optimizer is not None:
