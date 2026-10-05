@@ -155,7 +155,7 @@ class BaseExperiment(ABC):
 			str(self.imagery_root),
 			transform=self.transform,
 			dish_ids=dish_ids,
-			image_level=False,
+			image_level=True,
 			cache_dir=str(self.cache_dir) if self.cache_dir is not None else None,
 			augmentation=self.train_augmentation if training else None,
 			post_transform=getattr(self, "post_transform", None),

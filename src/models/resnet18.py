@@ -9,7 +9,7 @@ from .base_model import BaseModel
 
 
 class ResNet18(BaseModel):
-	"""ResNet-18 image backbone with multi-view regression output."""
+	"""ResNet-18 image backbone with single-view regression output."""
 
 	def __init__(
 		self,
@@ -25,6 +25,14 @@ class ResNet18(BaseModel):
 		self.regressor = nn.Linear(feature_channels * 2, output_features)
 
 	def forward(self, batch: Mapping[str, Any]) -> Tensor:
+		if "image" in batch:
+			image = batch["image"]
+			if image.ndim != 4 or image.size(1) != 3:
+				raise ValueError("image must have shape (batch, 3, height, width).")
+			features = self._encode_images(image)
+			return self.regressor(torch.cat([features, features], dim=1))
+
+		# Keep loading older multi-view checkpoints and callers working.
 		overhead_features = self._encode_images(batch["overhead"])
 		side_views = batch["side_views"]
 		side_dish_indices = batch["side_dish_indices"]

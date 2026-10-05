@@ -7,7 +7,6 @@ import torch
 from torch import nn
 from torch.utils.data import WeightedRandomSampler
 
-from src.dataset.Nutrition5kDataset import collate_nutrition5k
 from src.models import ResNet18
 from setup import BATCH_SIZE, MODEL_CHECKPOINT_DIR, NUM_WORKERS
 from .base_experiment import BaseExperiment, FoldSetup
@@ -56,7 +55,7 @@ class ResNet18Experiment(BaseExperiment):
                 target_names=self.TARGET_NAMES,
                 criterion=nn.MSELoss(),
                 device="cuda" if torch.cuda.is_available() else "cpu",
-                collate_fn=collate_nutrition5k,
+                collate_fn=None,
                 seed=seed,
                 early_stopping_patience=early_stopping_patience,
                 gradient_clip_norm=gradient_clip_norm,
@@ -118,7 +117,7 @@ class ResNet18Experiment(BaseExperiment):
         model_config = {
             "output_features": len(self.TARGET_NAMES),
             "image_size": self.image_size,
-            "uses_side_views": True,
+            "uses_single_view": True,
             "backbone": "resnet18",
             "target_mean": target_mean.tolist(),
             "target_std": target_std.tolist(),

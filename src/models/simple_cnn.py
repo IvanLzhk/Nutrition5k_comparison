@@ -8,7 +8,7 @@ from .base_model import BaseModel
 
 
 class SimpleCNN(BaseModel):
-    """Small multi-view image regressor for overhead and side-view inputs."""
+    """Small image regressor that predicts from one view at a time."""
 
     def __init__(
         self,
@@ -42,6 +42,14 @@ class SimpleCNN(BaseModel):
         self.regressor = nn.Linear(input_channels * 2, output_features)
 
     def forward(self, batch: Mapping[str, Any]) -> Tensor:
+        if "image" in batch:
+            image = batch["image"]
+            if image.ndim != 4 or image.size(1) != 3:
+                raise ValueError("image must have shape (batch, 3, height, width).")
+            features = self._encode_images(image)
+            return self.regressor(torch.cat([features, features], dim=1))
+
+        # Keep loading older multi-view checkpoints and callers working.
         overhead_features = self._encode_images(batch["overhead"])
         side_views = batch["side_views"]
         side_dish_indices = batch["side_dish_indices"]

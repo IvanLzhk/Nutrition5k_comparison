@@ -36,7 +36,8 @@ class Nutrition5kDataset(Dataset):
             imagery_root: Path to the 'imagery' folder (containing 'overhead' and 'side_angles').
             transform: torchvision transforms for images.
             dish_ids: Optional list/set of dish_ids for train/val split.
-            image_level: Return each overhead or side image as its own labeled sample.
+            image_level: Return each overhead or side image as an independent
+                labeled sample under the ``image`` field.
         """
         self.imagery_root = imagery_root
         self.imagery_root_path = Path(imagery_root).resolve()
@@ -268,7 +269,7 @@ class Nutrition5kDataset(Dataset):
             return {
                 "dish_id": entry["dish_id"],
                 "view_type": view_type,
-                "overhead": self._load_image(
+                "image": self._load_image(
                     image_path, flip_vertical=view_type == "side"
                 ),
                 "targets": torch.tensor(entry["targets"], dtype=torch.float32),

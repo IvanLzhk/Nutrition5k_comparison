@@ -109,8 +109,8 @@ class Nutrition5kDatasetTests(unittest.TestCase):
         image.save(side_path)
 
         dataset = self._make_dataset(image_level=True)
-        overhead = dataset[0]["overhead"]
-        side = dataset[1]["overhead"]
+        overhead = dataset[0]["image"]
+        side = dataset[1]["image"]
         with Image.open(side_path) as source:
             expected_side = T.Compose(
                 [T.Resize((4, 4)), T.ToTensor()]
@@ -123,12 +123,12 @@ class Nutrition5kDatasetTests(unittest.TestCase):
         cache_dir = self.root / "cache"
         dataset = self._make_dataset(cache_dir=cache_dir, image_level=True)
 
-        first = dataset[1]["overhead"]
+        first = dataset[1]["image"]
         cache_files = list(cache_dir.glob("*.png"))
         self.assertEqual(len(cache_files), 1)
         cached_mtime = cache_files[0].stat().st_mtime_ns
 
-        cached = dataset[1]["overhead"]
+        cached = dataset[1]["image"]
         torch.testing.assert_close(cached, first)
         self.assertEqual(cache_files[0].stat().st_mtime_ns, cached_mtime)
 
@@ -140,7 +140,7 @@ class Nutrition5kDatasetTests(unittest.TestCase):
             ns=(source_stat.st_atime_ns, source_stat.st_mtime_ns + 1_000_000_000),
         )
 
-        updated = dataset[1]["overhead"]
+        updated = dataset[1]["image"]
         self.assertFalse(torch.equal(updated, first))
         self.assertEqual(len(list(cache_dir.glob("*.png"))), 2)
 
@@ -152,7 +152,7 @@ class Nutrition5kDatasetTests(unittest.TestCase):
             cache_dir=cache_dir, image_level=True, transform=small_transform
         )
 
-        small_image = small_dataset[1]["overhead"]
+        small_image = small_dataset[1]["image"]
 
         self.assertEqual(small_image.shape, (3, 2, 2))
         self.assertEqual(len(list(cache_dir.glob("*.png"))), 2)
@@ -175,7 +175,7 @@ class Nutrition5kDatasetTests(unittest.TestCase):
             transform=normalized_transform,
         )
 
-        image = dataset[0]["overhead"]
+        image = dataset[0]["image"]
 
         self.assertEqual(image.shape, (3, 4, 4))
         self.assertTrue(torch.isfinite(image).all())
@@ -196,8 +196,8 @@ class Nutrition5kDatasetTests(unittest.TestCase):
             augmentation=add_call_count,
         )
 
-        first = dataset[1]["overhead"]
-        second = dataset[1]["overhead"]
+        first = dataset[1]["image"]
+        second = dataset[1]["image"]
 
         torch.testing.assert_close(second - first, torch.ones_like(first))
 
@@ -229,17 +229,17 @@ class Nutrition5kDatasetTests(unittest.TestCase):
         self.assertIsNone(evaluation_dataset.augmentation)
         self.assertFalse(
             torch.equal(
-                train_dataset[0]["side_views"][0],
-                evaluation_dataset[0]["side_views"][0],
+                train_dataset[1]["image"],
+                evaluation_dataset[1]["image"],
             )
         )
 
         experiment.batch_size = 2
         experiment.num_workers = 0
-        experiment.collate_fn = collate_nutrition5k
+        experiment.collate_fn = None
         batch = next(iter(experiment._create_loader(train_dataset)))
-        self.assertEqual(batch["overhead"].shape, (1, 3, 4, 4))
-        self.assertEqual(batch["side_views"].shape, (1, 3, 4, 4))
+        self.assertEqual(batch["image"].shape, (2, 3, 4, 4))
+        self.assertEqual(batch["targets"].shape, (2, 5))
 
     def test_experiment_loader_persists_workers_when_enabled(self):
         experiment = object.__new__(CNNExperiment)

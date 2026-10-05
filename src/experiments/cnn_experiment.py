@@ -8,7 +8,6 @@ from torch import nn
 from torch.utils.data import WeightedRandomSampler
 
 from setup import BATCH_SIZE, MODEL_CHECKPOINT_DIR, NUM_WORKERS
-from src.dataset.Nutrition5kDataset import collate_nutrition5k
 from src.models import SimpleCNN
 
 from .base_experiment import BaseExperiment, FoldSetup
@@ -62,7 +61,7 @@ class CNNExperiment(BaseExperiment):
 			target_names=self.TARGET_NAMES,
 			criterion=nn.MSELoss(),
 			device="cuda" if torch.cuda.is_available() else "cpu",
-			collate_fn=collate_nutrition5k,
+			collate_fn=None,
 			seed=seed,
 			early_stopping_patience=early_stopping_patience,
 			gradient_clip_norm=gradient_clip_norm,
@@ -132,7 +131,7 @@ class CNNExperiment(BaseExperiment):
 			"image_size": self.image_size,
 			"num_layers": self.num_layers,
 			"width": self.width,
-			"uses_side_views": True,
+			"uses_single_view": True,
 			"target_mean": target_mean.tolist(),
 			"target_std": target_std.tolist(),
 			"seed": self.seed,

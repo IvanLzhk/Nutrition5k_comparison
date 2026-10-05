@@ -9,7 +9,6 @@ from torch.utils.data import DataLoader
 from setup import METADATA_PATH, IMAGERY_ROOT, TRAIN_IDS_PATH, TEST_IDS_PATH
 from src.dataset.Nutrition5kDataset import (
     Nutrition5kDataset,
-    collate_nutrition5k,
 )
 
 
@@ -69,6 +68,7 @@ class RealDatasetTests(unittest.TestCase):
             metadata_path=str(self.metadata_path),
             imagery_root=str(self.imagery_root),
             transform=transforms,
+            image_level=True,
         )
 
         self.assertGreater(
@@ -82,27 +82,16 @@ class RealDatasetTests(unittest.TestCase):
             batch_size=2,
             shuffle=False,
             num_workers=0,
-            collate_fn=collate_nutrition5k,
         )
 
         batch = next(iter(loader))
 
-        batch_size = batch["batch_size"]
-        overhead = batch["overhead"]
-        side_views = batch["side_views"]
-        side_indices = batch["side_dish_indices"]
+        images = batch["image"]
         targets = batch["targets"]
 
-        self.assertEqual(overhead.shape, (batch_size, 3, 224, 224))
-        self.assertEqual(targets.shape, (batch_size, 5))
-        self.assertEqual(side_views.shape[0], side_indices.shape[0])
-
-        self.assertTrue(
-            torch.all((side_indices >= 0) & (side_indices < batch_size))
-        )
-
-        self.assertTrue(torch.isfinite(overhead).all())
-        self.assertTrue(torch.isfinite(side_views).all())
+        self.assertEqual(images.shape, (2, 3, 224, 224))
+        self.assertEqual(targets.shape, (2, 5))
+        self.assertTrue(torch.isfinite(images).all())
         self.assertTrue(torch.isfinite(targets).all())
 
 
