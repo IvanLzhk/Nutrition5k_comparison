@@ -1,6 +1,5 @@
 """Run one-image inference and report forward-pass resource usage."""
 
-import argparse
 import ctypes
 import json
 import os
@@ -21,7 +20,12 @@ except ImportError:  # pragma: no cover - only used on Windows
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.models import ResNet18, SimpleCNN, SwinTransformerTiny
+from src.models import (
+    ResNet18,
+    SimpleCNN,
+    SwinTransformerSmall,
+    SwinTransformerTiny,
+)
 
 
 TARGET_NAMES = ("calories", "mass_g", "fat_g", "carbs_g", "protein_g")
@@ -31,7 +35,11 @@ MODEL_CLASSES = {
     "src.models.simple_cnn.SimpleCNN": SimpleCNN,
     "src.models.resnet18.ResNet18": ResNet18,
     "src.models.swin_transformer_tiny.SwinTransformerTiny": SwinTransformerTiny,
+    "src.models.swin_transformer_small.SwinTransformerSmall": SwinTransformerSmall,
 }
+CHECKPOINT_PATH = Path("C:/Users/Admin/projects/Nutrition5k_comparison/checkpoints/swin_transformer_tiny/2026.10.05_21-10-09/single_split/swin_transformer_tiny_best.pt")
+IMAGE_PATH = Path("C:/Users/Admin/projects/Nutrition5k_comparison/example.jpg")
+DEVICE = "auto"
 
 
 def _load_checkpoint_metadata(checkpoint_path: Path) -> Mapping[str, Any]:
@@ -71,6 +79,11 @@ def _build_model(metadata: Mapping[str, Any]) -> torch.nn.Module:
         )
     if model_type is ResNet18:
         return ResNet18(output_features=config["output_features"], weights=None)
+    if model_type is SwinTransformerSmall:
+        return SwinTransformerSmall(
+            output_features=config["output_features"],
+            weights=None,
+        )
     return SwinTransformerTiny(
         output_features=config["output_features"],
         weights=None,
@@ -193,24 +206,17 @@ def _parse_device(value: str) -> torch.device:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Run one image through a Nutrition5k checkpoint."
-    )
-    parser.add_argument("--checkpoint", required=True, type=Path)
-    parser.add_argument("--image", required=True, type=Path)
-    parser.add_argument("--device", default="auto")
-    args = parser.parse_args()
-    if not args.checkpoint.is_file():
-        parser.error(f"Checkpoint not found: {args.checkpoint}")
-    if not args.image.is_file():
-        parser.error(f"Image not found: {args.image}")
+    if not CHECKPOINT_PATH.is_file():
+        raise FileNotFoundError(f"Checkpoint not found: {CHECKPOINT_PATH}")
+    if not IMAGE_PATH.is_file():
+        raise FileNotFoundError(f"Image not found: {IMAGE_PATH}")
     try:
-        device = _parse_device(args.device)
+        device = _parse_device(DEVICE)
         predictions, flops, memory = run_inference(
-            args.checkpoint, args.image, device
+            CHECKPOINT_PATH, IMAGE_PATH, device
         )
     except (OSError, RuntimeError, ValueError, KeyError, TypeError) as error:
-        parser.error(str(error))
+        raise RuntimeError(str(error)) from error
 
     print(f"Device: {device}")
     print("Predictions:")

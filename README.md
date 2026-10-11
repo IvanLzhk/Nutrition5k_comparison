@@ -13,6 +13,7 @@ The main goal is to make model comparisons reproducible while keeping the traini
   - `SimpleCNN`
   - `ResNet18`
   - `Swin Transformer Tiny`
+  - `Swin Transformer Small`
 - Support for overhead images and optional side-angle images for each dish.
 - Per-dish aggregation of side-view features before regression.
 - Flexible single-split or K-fold training configuration.
