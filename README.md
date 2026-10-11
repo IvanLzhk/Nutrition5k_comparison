@@ -51,6 +51,7 @@ Targets are standardized during training and converted back to the original scal
 ├── scripts/
 │   ├── clean_empty_data.py         # Dataset cleanup utility
 │   ├── convert_and_test_checkpoint.py
+│   ├── run_inference.py            # Single-photo inference and resource report
 │   └── preview_side_flip.py        # Image preprocessing/debugging utility
 ├── src/
 │   ├── dataset/
@@ -156,6 +157,31 @@ Training runs save artifacts under `checkpoints/`, including:
 - Final `test_metrics.json` files
 
 The image transformation cache is stored under `data/cache/nutrition5k/`.
+
+## Running single-photo inference
+
+Use `scripts/run_inference.py` with a checkpoint produced by this project and
+one photo:
+
+```bash
+python scripts/run_inference.py \
+  --checkpoint checkpoints/resnet18/<timestamp>/single_split/resnet18_best.pt \
+  --image path/to/photo.jpg
+```
+
+The script supports `SimpleCNN`, `ResNet18`, and `Swin Transformer Tiny`
+checkpoints. It reads the model class, architecture settings, input image size,
+and target standardization statistics from the checkpoint's sibling `.json`
+metadata file, so the checkpoint and metadata file must both be present.
+Predictions are printed in the original units for calories, mass, fat,
+carbohydrates, and protein. Use `--device cpu`, `--device cuda`, or leave the
+default `--device auto` to select CUDA when available.
+
+The resource report describes one image forward pass. `Forward FLOPs` is the
+PyTorch profiler's operator FLOPs estimate. CUDA runs report peak allocated
+device memory; CPU runs report the process resident memory observed around the
+forward pass. FLOPs profiling uses PyTorch's built-in profiler and does not
+require an additional package.
 
 ## Running tests
 
