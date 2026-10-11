@@ -304,8 +304,8 @@ def train_model(
     to explicitly train on the CPU. ``gradient_accumulation_steps`` controls how
     many batches contribute gradients to each optimizer step.
     """
-    if epochs <= 0:
-        raise ValueError("epochs must be a positive integer.")
+    if epochs < 0:
+        raise ValueError("epochs must be a positive integer or 0.")
     if early_stopping_patience is not None and early_stopping_patience < 1:
         raise ValueError("early_stopping_patience must be positive.")
     if gradient_clip_norm is not None and gradient_clip_norm <= 0:

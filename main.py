@@ -21,9 +21,9 @@ def build_train_augmentation() -> T.Compose:
 
 
 # Experiment settings
-EPOCHS = 50
+EPOCHS = 0
 FOLDS = None
-BATCH_SIZE = 32
+BATCH_SIZE = 8
 NUM_WORKERS = 4
 PREFETCH_FACTOR = 1
 CNN_LEARNING_RATE = 1e-4
@@ -40,9 +40,9 @@ WIDTH = 85
 SEED = 42
 EARLY_STOPPING_PATIENCE = 8
 GRADIENT_CLIP_NORM = 1.0
-GRADIENT_ACCUMULATION_STEPS = 2
+GRADIENT_ACCUMULATION_STEPS = 4
 USE_AMP = True
-RESUME_FROM = None# Example: Path("checkpoints/simple_cnn/2026.09.30_22-21-48/single_split/simple_cnn_best.pt")
+RESUME_FROM = Path("checkpoints/simple_cnn/2026.10.11_13-27-50/single_split/simple_cnn_best.pt")
 
 
 def main() -> None:
@@ -64,16 +64,24 @@ def main() -> None:
 	}
 
 	experiment_factories = [
-				
-		(
-			"swin_transformer_tiny",
-			SwinTransformerTiny,
-			lambda: SwinTransformerTinyExperiment(
-				**common_options,
-				learning_rate=SWIN_LEARNING_RATE,
-				resume_from=RESUME_FROM,
-			),
-		),
+		#  		(
+		#  			"swin_transformer_tiny",
+		#  			SwinTransformerTiny,
+		#  			lambda: SwinTransformerTinyExperiment(
+		#  				**common_options,
+		#  		learning_rate=SWIN_LEARNING_RATE,
+		#  		resume_from=RESUME_FROM,
+		#  	),
+		# ),
+		# (
+		# 					"resnet18",
+		# 					ResNet18,
+		# 					lambda: ResNet18Experiment(
+		# 						**common_options,
+		# 						learning_rate=RESNET_LEARNING_RATE,
+		# 						resume_from=RESUME_FROM,
+		# 					),
+		# 				),
 		(
 					"simple_cnn",
 					lambda: SimpleCNN(num_layers=NUM_LAYERS, width=WIDTH),
@@ -85,15 +93,7 @@ def main() -> None:
 						resume_from=RESUME_FROM,
 					),
 				),
-				(
-					"resnet18",
-					ResNet18,
-					lambda: ResNet18Experiment(
-						**common_options,
-						learning_rate=RESNET_LEARNING_RATE,
-						resume_from=RESUME_FROM,
-					),
-				),
+				
 	]
 
 	for model_name, model_factory, experiment_factory in experiment_factories:
