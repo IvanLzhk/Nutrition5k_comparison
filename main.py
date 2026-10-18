@@ -6,8 +6,11 @@ from src.experiments.resnet18_experiment import ResNet18Experiment
 from src.experiments.swin_transformer_tiny_experiment import (
 	SwinTransformerTinyExperiment,
 )
+from src.experiments.swin_transformer_small_experiment import (
+	SwinTransformerSmallExperiment,
+)
 from src.experiments.cnn_experiment import CNNExperiment
-from src.models import ResNet18, SimpleCNN, SwinTransformerTiny
+from src.models import ResNet18, SimpleCNN, SwinTransformerTiny, SwinTransformerSmall
 
 
 def build_train_augmentation() -> T.Compose:
@@ -21,9 +24,9 @@ def build_train_augmentation() -> T.Compose:
 
 
 # Experiment settings
-EPOCHS = 0
+EPOCHS = 20
 FOLDS = None
-BATCH_SIZE = 8
+BATCH_SIZE = 64
 NUM_WORKERS = 4
 PREFETCH_FACTOR = 1
 CNN_LEARNING_RATE = 1e-4
@@ -38,11 +41,11 @@ AUGMENTATION_FACTORY = build_train_augmentation
 NUM_LAYERS = 5
 WIDTH = 85
 SEED = 42
-EARLY_STOPPING_PATIENCE = 8
+EARLY_STOPPING_PATIENCE = 5
 GRADIENT_CLIP_NORM = 1.0
-GRADIENT_ACCUMULATION_STEPS = 4
+GRADIENT_ACCUMULATION_STEPS = 8
 USE_AMP = True
-RESUME_FROM = Path("checkpoints/simple_cnn/2026.10.11_13-27-50/single_split/simple_cnn_best.pt")
+RESUME_FROM = None #Path("checkpoints/simple_cnn/2026.10.11_13-27-50/single_split/simple_cnn_best.pt")
 
 
 def main() -> None:
@@ -64,15 +67,15 @@ def main() -> None:
 	}
 
 	experiment_factories = [
-		#  		(
-		#  			"swin_transformer_tiny",
-		#  			SwinTransformerTiny,
-		#  			lambda: SwinTransformerTinyExperiment(
-		#  				**common_options,
-		#  		learning_rate=SWIN_LEARNING_RATE,
-		#  		resume_from=RESUME_FROM,
-		#  	),
-		# ),
+		  		(
+		  			"swin_transformer_small",
+		  			SwinTransformerSmall,
+		  			lambda: SwinTransformerSmallExperiment(
+		  				**common_options,
+		  		learning_rate=SWIN_LEARNING_RATE,
+		  		resume_from=RESUME_FROM,
+		  	),
+		 ),
 		# (
 		# 					"resnet18",
 		# 					ResNet18,
@@ -82,17 +85,17 @@ def main() -> None:
 		# 						resume_from=RESUME_FROM,
 		# 					),
 		# 				),
-		(
-					"simple_cnn",
-					lambda: SimpleCNN(num_layers=NUM_LAYERS, width=WIDTH),
-					lambda: CNNExperiment(
-						**common_options,
-						learning_rate=CNN_LEARNING_RATE,
-						num_layers=NUM_LAYERS,
-						width=WIDTH,
-						resume_from=RESUME_FROM,
-					),
-				),
+		# (
+		# 			"simple_cnn",
+		# 			lambda: SimpleCNN(num_layers=NUM_LAYERS, width=WIDTH),
+		# 			lambda: CNNExperiment(
+		# 				**common_options,
+		# 				learning_rate=CNN_LEARNING_RATE,
+		# 				num_layers=NUM_LAYERS,
+		# 				width=WIDTH,
+		# 				resume_from=RESUME_FROM,
+		# 			),
+		# 		),
 				
 	]
 
