@@ -5,7 +5,7 @@ import unittest
 import torch
 from PIL import Image
 
-from scripts.run_inference import inverse_standardize, run_inference
+from scripts.run_model import inverse_standardize, run_inference
 from src.models import SimpleCNN
 
 

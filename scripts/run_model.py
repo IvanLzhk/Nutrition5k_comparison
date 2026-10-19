@@ -38,7 +38,9 @@ MODEL_CLASSES = {
     "src.models.swin_transformer_small.SwinTransformerSmall": SwinTransformerSmall,
 }
 CHECKPOINT_PATH = Path("C:/Users/Admin/projects/Nutrition5k_comparison/checkpoints/swin_transformer_tiny/2026.10.05_21-10-09/single_split/swin_transformer_tiny_best.pt")
-IMAGE_PATH = Path("C:/Users/Admin/projects/Nutrition5k_comparison/example.jpg")
+#CHECKPOINT_PATH = Path("C:/Users/Admin/projects/Nutrition5k_comparison/checkpoints/simple_cnn/2026.10.11_19-02-29/single_split/simple_cnn_best.pt")
+#CHECKPOINT_PATH = Path("C:/Users/Admin/projects/Nutrition5k_comparison/checkpoints/resnet18/2026.10.06_13-47-00/single_split/resnet18_best.pt")
+IMAGE_PATH = Path("C:/Users/Admin/projects/Nutrition5k_comparison/example2.jpg")
 DEVICE = "auto"
 
 
@@ -206,6 +208,7 @@ def _parse_device(value: str) -> torch.device:
 
 
 def main() -> None:
+    print(f"Running: {CHECKPOINT_PATH}")
     if not CHECKPOINT_PATH.is_file():
         raise FileNotFoundError(f"Checkpoint not found: {CHECKPOINT_PATH}")
     if not IMAGE_PATH.is_file():
