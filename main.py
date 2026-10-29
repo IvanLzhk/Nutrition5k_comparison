@@ -2,6 +2,8 @@ from pathlib import Path
 
 import torchvision.transforms as T
 
+from setup import DINOV3_REPOSITORY, DINOV3_WEIGHTS
+from src.experiments.dinov3_experiment import DinoV3Experiment
 from src.experiments.resnet18_experiment import ResNet18Experiment
 from src.experiments.swin_transformer_tiny_experiment import (
 	SwinTransformerTinyExperiment,
@@ -10,7 +12,7 @@ from src.experiments.swin_transformer_small_experiment import (
 	SwinTransformerSmallExperiment,
 )
 from src.experiments.cnn_experiment import CNNExperiment
-from src.models import ResNet18, SimpleCNN, SwinTransformerTiny, SwinTransformerSmall
+from src.models import DinoV3, ResNet18, SimpleCNN, SwinTransformerTiny, SwinTransformerSmall
 
 
 def build_train_augmentation() -> T.Compose:
@@ -46,8 +48,6 @@ GRADIENT_CLIP_NORM = 1.0
 GRADIENT_ACCUMULATION_STEPS = 8
 USE_AMP = True
 RESUME_FROM = None #Path("checkpoints/simple_cnn/2026.10.11_13-27-50/single_split/simple_cnn_best.pt")
-
-
 def main() -> None:
 	common_options = {
 		"epochs": EPOCHS,
@@ -67,15 +67,27 @@ def main() -> None:
 	}
 
 	experiment_factories = [
-		  		(
-		  			"swin_transformer_small",
-		  			SwinTransformerSmall,
-		  			lambda: SwinTransformerSmallExperiment(
-		  				**common_options,
-		  		learning_rate=SWIN_LEARNING_RATE,
-		  		resume_from=RESUME_FROM,
-		  	),
-		 ),
+     (
+					"dinov3",
+					lambda: DinoV3(
+						weights=DINOV3_WEIGHTS,
+					),
+					lambda: DinoV3Experiment(
+						**common_options,
+						weights=DINOV3_WEIGHTS,
+						learning_rate=1e-5,
+						resume_from=RESUME_FROM,
+					),
+				)
+		#   		(
+		#   			"swin_transformer_small",
+		#   			SwinTransformerSmall,
+		#   			lambda: SwinTransformerSmallExperiment(
+		#   				**common_options,
+		#   		learning_rate=SWIN_LEARNING_RATE,
+		#   		resume_from=RESUME_FROM,
+		#   	),
+		#  ),
 		# (
 		# 					"resnet18",
 		# 					ResNet18,

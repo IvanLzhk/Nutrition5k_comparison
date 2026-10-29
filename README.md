@@ -14,6 +14,7 @@ The main goal is to make model comparisons reproducible while keeping the traini
   - `ResNet18`
   - `Swin Transformer Tiny`
   - `Swin Transformer Small`
+  - `DINOv3 ViT-B/16` (local DINOv3 checkpoint)
 - Support for overhead images and optional side-angle images for each dish.
 - Per-dish aggregation of side-view features before regression.
 - Flexible single-split or K-fold training configuration.
@@ -100,7 +101,7 @@ source .venv/bin/activate       # Linux/macOS
 # .venv\Scripts\activate       # Windows
 
 python -m pip install --upgrade pip
-python -m pip install torch torchvision numpy pandas pillow scikit-learn
+python -m pip install torch torchvision numpy pandas pillow scikit-learn transformers
 ```
 
 Depending on the local environment, additional development or visualization dependencies may be useful for running the helper scripts and tests.
@@ -146,6 +147,23 @@ The pipeline is intended to make adding standard models straightforward:
 5. Reuse the shared dataset, trainer, checkpoint, and evaluation components.
 
 This separation between models, experiments, data handling, and training is the central design goal of the project. It allows the same evaluation workflow to be applied to different architectures without duplicating the complete training loop.
+
+### DINOv3
+
+DINOv3 is loaded through the local DINOv3 repository configured by
+`DINOV3_REPOSITORY`. Install Transformers and set `DINOV3_WEIGHTS` in
+`setup.py` to the downloaded Hugging Face snapshot directory:
+
+```python
+DINOV3_WEIGHTS = (
+    r"C:\Users\admin\.cache\huggingface\hub\models--facebook--"
+    r"dinov3-vitb16-pretrain-lvd1689m\snapshots\<snapshot-id>"
+)
+```
+
+The directory must contain `config.json` and `model.safetensors`. The default
+value is `None`; running with it unchanged fails early with a configuration
+error.
 
 ## Outputs
 

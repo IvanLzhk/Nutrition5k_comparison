@@ -3,7 +3,26 @@ import unittest
 import torch
 from torch import nn
 
-from src.models import ResNet18, SimpleCNN, SwinTransformerTiny
+from src.models import DinoV3, ResNet18, SimpleCNN, SwinTransformerTiny
+
+
+class DinoV3Tests(unittest.TestCase):
+    def test_offline_encoder_forward_and_side_view_pooling(self):
+        model = DinoV3(output_features=5, pretrained=False, encode_batch_size=2)
+        batch = {
+            "overhead": torch.rand(2, 3, 224, 224),
+            "side_views": torch.rand(3, 3, 224, 224),
+            "side_dish_indices": torch.tensor([0, 1, 1]),
+        }
+
+        predictions = model(batch)
+
+        self.assertEqual(predictions.shape, (2, 5))
+        self.assertTrue(torch.isfinite(predictions).all())
+
+    def test_pretrained_requires_checkpoint(self):
+        with self.assertRaisesRegex(ValueError, "local DINOv3 Hugging Face model"):
+            DinoV3(output_features=5, weights=None)
 
 
 class SwinTransformerTinyTests(unittest.TestCase):
