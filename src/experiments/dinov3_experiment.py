@@ -60,7 +60,7 @@ class DinoV3Experiment(BaseExperiment):
             checkpoint_root=checkpoint_root,
             model_name="dinov3",
             target_names=self.TARGET_NAMES,
-            criterion=nn.MSELoss(),
+            criterion=nn.SmoothL1Loss(),
             device="cuda" if torch.cuda.is_available() else "cpu",
             collate_fn=None,
             seed=seed,
@@ -74,8 +74,8 @@ class DinoV3Experiment(BaseExperiment):
     def _create_fold(
         self, train_ids: list[str], validation_ids: list[str], run_label: str
     ) -> FoldSetup:
-        train_dataset = self._create_dataset(train_ids, training=True)
-        validation_dataset = self._create_dataset(validation_ids, image_level=False)
+        train_dataset = self._create_dataset(train_ids, training=True, image_level=True)
+        validation_dataset = self._create_dataset(validation_ids, image_level=True)
         if not train_dataset or not validation_dataset:
             raise ValueError(f"{run_label} has an empty train or validation dataset.")
         training_targets = torch.tensor(

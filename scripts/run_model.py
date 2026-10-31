@@ -21,6 +21,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.models import (
+    DinoV3,
     ResNet18,
     SimpleCNN,
     SwinTransformerSmall,
@@ -32,15 +33,17 @@ TARGET_NAMES = ("calories", "mass_g", "fat_g", "carbs_g", "protein_g")
 IMAGE_MEAN = [0.485, 0.456, 0.406]
 IMAGE_STD = [0.229, 0.224, 0.225]
 MODEL_CLASSES = {
+    "src.models.dinov3.DinoV3": DinoV3,
     "src.models.simple_cnn.SimpleCNN": SimpleCNN,
     "src.models.resnet18.ResNet18": ResNet18,
     "src.models.swin_transformer_tiny.SwinTransformerTiny": SwinTransformerTiny,
     "src.models.swin_transformer_small.SwinTransformerSmall": SwinTransformerSmall,
 }
-CHECKPOINT_PATH = Path("C:/Users/Admin/projects/Nutrition5k_comparison/checkpoints/swin_transformer_tiny/2026.10.05_21-10-09/single_split/swin_transformer_tiny_best.pt")
+#CHECKPOINT_PATH = Path("C:/Users/Admin/projects/Nutrition5k_comparison/checkpoints/swin_transformer_tiny/2026.10.05_21-10-09/single_split/swin_transformer_tiny_best.pt")
 #CHECKPOINT_PATH = Path("C:/Users/Admin/projects/Nutrition5k_comparison/checkpoints/simple_cnn/2026.10.11_19-02-29/single_split/simple_cnn_best.pt")
 #CHECKPOINT_PATH = Path("C:/Users/Admin/projects/Nutrition5k_comparison/checkpoints/resnet18/2026.10.06_13-47-00/single_split/resnet18_best.pt")
-IMAGE_PATH = Path("C:/Users/Admin/projects/Nutrition5k_comparison/example2.jpg")
+CHECKPOINT_PATH = Path("D:/vs_projects/Nutrition5k_comparison/checkpoints/dinov3/2026.10.30_18-07-47/single_split/dinov3_best.pt")
+IMAGE_PATH = Path("D:/vs_projects/Nutrition5k_comparison/example.png")
 DEVICE = "auto"
 
 
@@ -73,6 +76,13 @@ def _build_model(metadata: Mapping[str, Any]) -> torch.nn.Module:
     model_class = metadata["model_class"]
     config = metadata["model_config"]
     model_type = MODEL_CLASSES[model_class]
+    if model_type is DinoV3:
+        return DinoV3(
+            output_features=config["output_features"],
+            model_name=config.get("backbone", "dinov3_vitb16"),
+            weights=config.get("weights"),
+            pretrained=config.get("pretrained", True),
+        )
     if model_type is SimpleCNN:
         return SimpleCNN(
             output_features=config["output_features"],

@@ -24,7 +24,7 @@ class DinoV3(BaseModel):
         model_name: str = "dinov3_vitb16",
         weights: str | Path | None = None,
         pretrained: bool = True,
-        encode_batch_size: int = 4,
+        encode_batch_size: int = 16,
         repository: str | Path = "D:/vs_projects/dinov3",
         backbone: nn.Module | None = None,
         feature_channels: int | None = None,
@@ -98,7 +98,7 @@ class DinoV3(BaseModel):
         self.model_name = model_name
         self.repository = str(repository)
         self.pretrained = pretrained
-        self.regressor = nn.Linear(self.feature_channels * 2, output_features)
+        self.regressor = nn.Linear(self.feature_channels, output_features)
         self._backbone_trainable = True
 
     def set_backbone_trainable(self, trainable: bool) -> None:
@@ -116,42 +116,15 @@ class DinoV3(BaseModel):
 
     def forward(self, batch: Mapping[str, Any]) -> Tensor:
         if "image" in batch:
-            image = batch["image"]
-            features = self._encode_images(image)
-            return self.regressor(torch.cat([features, features], dim=1))
+            images = batch["image"]
+        elif "overhead" in batch:
+            images = batch["overhead"]
+        else:
+            raise KeyError("Батч повинен містити ключ 'image' або 'overhead'")
 
-        overhead_features = self._encode_images(batch["overhead"])
-        side_views = batch["side_views"]
-        side_dish_indices = batch["side_dish_indices"]
-        if side_views.ndim != 4 or side_dish_indices.ndim != 1:
-            raise ValueError(
-                "side_views must be a 4D tensor and side_dish_indices must be 1D."
-            )
-        if side_views.size(0) != side_dish_indices.numel():
-            raise ValueError(
-                "side_views and side_dish_indices must contain the same number "
-                "of images."
-            )
-
-        side_features = overhead_features.new_zeros(overhead_features.shape)
-        if side_views.size(0) > 0:
-            encoded_side_views = self._encode_images(side_views)
-            if side_dish_indices.numel() and (
-                side_dish_indices.min() < 0
-                or side_dish_indices.max() >= overhead_features.size(0)
-            ):
-                raise ValueError("side_dish_indices contains an invalid dish index.")
-            side_features.index_add_(0, side_dish_indices, encoded_side_views)
-            side_counts = overhead_features.new_zeros((overhead_features.size(0), 1))
-            side_counts.index_add_(
-                0,
-                side_dish_indices,
-                overhead_features.new_ones((side_dish_indices.numel(), 1)),
-            )
-            side_features = side_features / side_counts.clamp_min(1)
-
-        return self.regressor(torch.cat([overhead_features, side_features], dim=1))
-
+        features = self._encode_images(images)
+        return self.regressor(features)
+    
     def _encode_images(self, images: Tensor) -> Tensor:
         if images.ndim != 4 or images.size(1) != 3:
             raise ValueError("Images must have shape (batch, 3, height, width).")

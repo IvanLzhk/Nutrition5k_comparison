@@ -249,10 +249,16 @@ class Nutrition5kDataset(Dataset):
                 T.ToPILImage()(tensor.detach().cpu()).save(
                     temporary_path, format="PNG"
                 )
-                os.replace(temporary_path, cache_path)
+                try:
+                    os.replace(temporary_path, cache_path)
+                except (PermissionError, OSError):
+                    pass
             finally:
-                if temporary_path is not None:
-                    temporary_path.unlink(missing_ok=True)
+                if temporary_path is not None and temporary_path.is_file():
+                    try:
+                        temporary_path.unlink(missing_ok=True)
+                    except OSError:
+                        pass
 
         return self._apply_image_transforms(tensor)
 

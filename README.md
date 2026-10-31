@@ -188,8 +188,9 @@ python scripts/run_inference.py \
   --image path/to/photo.jpg
 ```
 
-The script supports `SimpleCNN`, `ResNet18`, and `Swin Transformer Tiny`
-checkpoints. It reads the model class, architecture settings, input image size,
+The script supports `SimpleCNN`, `ResNet18`, `Swin Transformer Tiny`,
+`Swin Transformer Small`, and `DINOv3` checkpoints. It reads the model class,
+architecture settings, input image size,
 and target standardization statistics from the checkpoint's sibling `.json`
 metadata file, so the checkpoint and metadata file must both be present.
 Predictions are printed in the original units for calories, mass, fat,

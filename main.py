@@ -35,7 +35,7 @@ CNN_LEARNING_RATE = 1e-4
 RESNET_LEARNING_RATE = 1e-4
 SWIN_LEARNING_RATE = 5e-5
 ACCURACY_TOLERANCE_PERCENT = 10.0
-IMAGE_SIZE = 244
+IMAGE_SIZE = 224
 CACHE_DIR = Path("data/cache/nutrition5k")
 AUGMENTATION_FACTORY = build_train_augmentation
 # Five convolutional layers with width 85 give SimpleCNN a parameter count
@@ -45,9 +45,9 @@ WIDTH = 85
 SEED = 42
 EARLY_STOPPING_PATIENCE = 5
 GRADIENT_CLIP_NORM = 1.0
-GRADIENT_ACCUMULATION_STEPS = 8
+GRADIENT_ACCUMULATION_STEPS = 1
 USE_AMP = True
-RESUME_FROM = None #Path("checkpoints/simple_cnn/2026.10.11_13-27-50/single_split/simple_cnn_best.pt")
+RESUME_FROM = None #Path("checkpoints/dinov3/2026.10.30_17-16-23/single_split/dinov3_latest.pt")
 def main() -> None:
 	common_options = {
 		"epochs": EPOCHS,

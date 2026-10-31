@@ -5,11 +5,29 @@ import unittest
 import torch
 from PIL import Image
 
-from scripts.run_model import inverse_standardize, run_inference
+from scripts.run_model import _build_model, inverse_standardize, run_inference
 from src.models import SimpleCNN
 
 
 class InferenceTests(unittest.TestCase):
+    def test_dinov3_checkpoint_metadata_builds_dinov3_model(self):
+        metadata = {
+            "format_version": 1,
+            "model_class": "src.models.dinov3.DinoV3",
+            "model_config": {
+                "output_features": 5,
+                "image_size": 224,
+                "backbone": "dinov3_vitb16",
+                "pretrained": False,
+                "target_mean": [0, 0, 0, 0, 0],
+                "target_std": [1, 1, 1, 1, 1],
+            },
+        }
+
+        model = _build_model(metadata)
+
+        self.assertEqual(type(model).__name__, "DinoV3")
+
     def test_inverse_standardize_restores_original_units(self):
         predictions = inverse_standardize(
             torch.zeros(1, 5), [10, 20, 30, 40, 50], [2, 3, 4, 5, 6]
