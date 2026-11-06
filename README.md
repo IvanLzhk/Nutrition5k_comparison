@@ -41,6 +41,24 @@ The pipeline is designed as a multi-output regression task. For each dish, the m
 
 Targets are standardized during training and converted back to the original scale for evaluation.
 
+## Recorded results
+
+The following results come from single-split runs on 709 test dishes. MAE is
+reported in the target's original units; mean R² is averaged across the five
+regression targets.
+
+| Model | Calories MAE | Mass MAE (g) | Fat MAE (g) | Carbs MAE (g) | Protein MAE (g) | Mean R² |
+|---|---:|---:|---:|---:|---:|---:|
+| SimpleCNN | 93.33 | 61.28 | 7.56 | 9.56 | 6.93 | 0.217 |
+| ResNet18 | 93.09 | 66.33 | 8.09 | 9.67 | 7.22 | 0.224 |
+| Swin Transformer Tiny | 73.95 | 46.99 | 6.12 | 6.22 | 4.50 | 0.291 |
+| DINOv3 ViT-B/16 | **64.49** | **36.22** | **5.45** | **5.49** | 4.07 | 0.282 |
+
+Among the recorded runs, DINOv3 achieved the lowest MAE for calories, mass,
+fat, and carbohydrates. Protein prediction had its highest R² with Swin
+Transformer Tiny (0.805). These results are preliminary and should be
+interpreted as a baseline comparison because they use a single split.
+
 ## Project structure
 
 ```text
